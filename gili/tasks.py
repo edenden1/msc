@@ -123,33 +123,36 @@ class Model:
 
         return p
 
-    def sample_trajectory(self, N, initialState=0):
+    def sample_trajectory(self, N, initialState=0, n_hidden=0):
         """
         Samples a trajectory
 
         :param N: The trajectory size
         :param initialState: The initial state of the trajectory
+        :param n_hidden: The number of hidden states
         :return:
         """
-        self._trajectory = Trajectory(self.n, self.w, self.steady_state, initialState)
+        self._trajectory = Trajectory(self.n, self.w, self.steady_state, initialState, n_hidden)
 
-        rates_convergence = []
-        steady_state_convergence = []
+        if n_hidden == 0:
+            rates_convergence = []
+            steady_state_convergence = []
 
         j = 1
         for i in range(1, N+1):
             self.trajectory.jump_state()
-            if i == 10**j:
-                w, steady_state = self.trajectory.estimate_from_statistics()
-                rates_convergence.append(np.linalg.norm(w-self.w))
-                steady_state_convergence.append(np.linalg.norm(steady_state-self.steady_state))
-                j += 1
-
-        self._cache.update(dict(
-                                rates_convergence = rates_convergence,
-                                steady_state_convergence = steady_state_convergence
-                                )
-                           )
+            if n_hidden == 0:
+                if i == 10**j:
+                    w, steady_state = self.trajectory.estimate_from_statistics()
+                    rates_convergence.append(np.linalg.norm(w-self.w))
+                    steady_state_convergence.append(np.linalg.norm(steady_state-self.steady_state))
+                    j += 1
+        if n_hidden == 0:
+            self._cache.update(dict(
+                                    rates_convergence=rates_convergence,
+                                    steady_state_convergence=steady_state_convergence
+                                    )
+                               )
 
     def plot_w_convergence(self):
         """
@@ -159,6 +162,9 @@ class Model:
         """
         if self._trajectory is None:
             raise Exception('No trajectory was sampled')
+
+        if self._trajectory.n_hidden > 1:
+            raise Exception("Can't compute convergence with hidden layers")
 
         plt.figure()
         w_conv = self._cache['rates_convergence']
@@ -177,6 +183,9 @@ class Model:
         """
         if self._trajectory is None:
             raise Exception('No trajectory was sampled')
+
+        if self._trajectory.n_hidden > 1:
+            raise Exception("Can't compute convergence with hidden layers")
 
         plt.figure()
         steady_state_conv = self._cache['steady_state_convergence']
@@ -199,11 +208,11 @@ class Model:
 class Trajectory(list):
     _n = None  # The number of states. int.
     _w = None  # The rate matrix. (n, n) numpy array.
-    _hidden = None  # The number of the hidden states. int.
+    _n_hidden = None  # The number of the hidden states. int.
     _jumpProbabilities = None  # The probability to jump from state j to state i. (n, n) numpy array.
-    _counterList = None  # The count of each state. (n, 1) numpy array.
-    _timeList = None  # The count of total time in each state. (n, 1) numpy array.
-    _jumpCounter = None  # The count of jump from each state to each state. (n, n) numpy array.
+    _counterList = None  # The count of each state. (n-n_hidden+1, 1) or (n, 1) numpy array
+    _timeList = None  # The count of total time in each state. (n-n_hidden+1, 1) or (n, 1) numpy array.
+    _jumpCounter = None  # The count of the jumps from each state to each state. (n-n_hidden+1, n-n_hidden+1) or (n, n,) numpy array.
 
     @property
     def n(self):
@@ -212,6 +221,14 @@ class Trajectory(list):
     @property
     def w(self):
         return self._w
+
+    @property
+    def n_hidden(self):
+        return self._n_hidden
+
+    @property
+    def n_observed(self):
+        return self.n-self.n_hidden
 
     @property
     def steady_state(self):
@@ -223,7 +240,7 @@ class Trajectory(list):
 
     @property
     def meanTime(self):
-        return np.divide(self._timeList, self._counterList, out=np.zeros((self.n, 1)), where=(self._counterList != 0))
+        return np.divide(self._timeList, self._counterList, out=np.zeros_like(self._timeList), where=(self._counterList != 0))
 
     @property
     def jumpProbabilities(self):
@@ -241,43 +258,67 @@ class Trajectory(list):
         ret += np.sum(tmp)/2.0
         return ret
 
-    def __init__(self, n, w, steady_state, initialState, hidden=0):
+    def __init__(self, n, w, steady_state, initialStateIndex, n_hidden=0):
         """
 
         :param n: The number of states
         :param w: The rate matrix
         :param steady_state: The steady state probabilities
-        :param initialState: The initial state
+        :param initialStateIndex: The index of the initial state
         :param hidden: The number of hidden layers
         """
         super().__init__()
         self._n = n
         self._w = w
         self._steady_state = steady_state
+        self._n_hidden = n_hidden
 
         self._jumpProbabilities = self.w/(-np.diagonal(self.w)).reshape(1, self.n)
         np.fill_diagonal(self._jumpProbabilities, 0)
 
-        self._timeList = np.zeros((self.n, 1))
-        self._counterList = np.zeros((self.n, 1))
-        self._jumpCounter = np.zeros((self.n, self.n))
+        arrays_size = n if self.n_hidden == 0 else self.n_observed+1
+        self._timeList = np.zeros((arrays_size, 1))
+        self._counterList = np.zeros((arrays_size, 1))
+        self._jumpCounter = np.zeros((arrays_size, arrays_size))
 
-        t = np.random.exponential(1 / -self.w[initialState, initialState])
-        self._timeList[initialState] += t
-        self._counterList[initialState] += 1
+        t = np.random.exponential(1 / -self.w[initialStateIndex, initialStateIndex])
+        self._timeList[initialStateIndex] += t
+        self._counterList[initialStateIndex] += 1
 
-        self.append((initialState, t))
+        state = State(index=initialStateIndex,
+                      t=t,
+                      hidden=(initialStateIndex >= self.n_observed)
+                      )
+
+        self.append(state)
 
     def jump_state(self):
-        current_state = self[-1][0]
-        new_state = np.random.choice(np.arange(self.n), p=self.jumpProbabilities[:, current_state])
-        t = np.random.exponential(1 / -self.w[new_state, new_state])
-        self._timeList[new_state] += t
-        self._counterList[new_state] += 1
-        self._jumpCounter[new_state, current_state] += 1
+        """
+        Performs a jump to a new state
 
-        self.append((new_state, t))
-        return new_state, t
+        :return:
+        """
+        current_state = self[-1]
+        new_state_index = np.random.choice(np.arange(self.n), p=self.jumpProbabilities[:, current_state.index])
+        t = np.random.exponential(1 / -self.w[new_state_index, new_state_index])
+        new_state = State(index=new_state_index,
+                          t=t,
+                          hidden=new_state_index >= self.n_observed
+                          )
+        if current_state.hidden and new_state.hidden:
+            new_state.add_time(current_state.t)
+            self._timeList[self.n_observed] += t
+            self[-1] = new_state
+        else:
+            current_index = self.n_observed if current_state.hidden else current_state.index
+            new_index = self.n_observed if new_state.hidden else new_state.index
+
+            self._timeList[new_index] += t
+            self._counterList[new_index] += 1
+            self._jumpCounter[new_index, current_index] += 1
+
+            self.append(new_state)
+        # return new_state
 
     def plot(self):
         """
@@ -288,18 +329,22 @@ class Trajectory(list):
         N = len(self)
 
         T = 0
-        state, t = self[0]
+        state = self[0]
+        index = self.n_observed if state.hidden else state.index
         plt.figure()
-        plt.hlines(state + 1, T, T + t)
-        T += t
+        plt.hlines(index + 1, T, T + state.t)
+        T += state.t
         for i in range(1, N):
-            state, t = self[i]
-            plt.vlines(T, self[i - 1][0] + 1, state + 1, linestyles=':')
-            plt.hlines(state + 1, T, T + t)
-            T += t
+            prev_index = index
+            state = self[i]
+            index = self.n_observed if state.hidden else state.index
+
+            plt.vlines(T, prev_index + 1, index + 1, linestyles=':')
+            plt.hlines(index + 1, T, T + state.t)
+            T += state.t
 
         plt.xlim(0, T)
-        plt.ylim(0, self.n + 1)
+        plt.ylim(0, self.n + 1 if self.n_hidden == 0 else self.n_observed+2)
 
         plt.xlabel('Time')
         plt.ylabel('State')
@@ -311,13 +356,50 @@ class Trajectory(list):
 
         :return: w, steady_state
         """
-
-        lamda = np.divide(1, self.meanTime, out=np.zeros((self.n, 1)), where=(self.meanTime != 0))
-        total_jumps = np.sum(self._jumpCounter, axis=0)
-        w = self._jumpCounter * np.divide(lamda.T, total_jumps, out=np.zeros((1, self.n)), where=(total_jumps != 0))
+        lamda = np.divide(1, self.meanTime, out=np.zeros_like(self.meanTime), where=(self.meanTime != 0))
+        total_jumps = np.sum(self._jumpCounter, axis=0, keepdims=True)
+        w = self._jumpCounter * np.divide(lamda.T, total_jumps, out=np.zeros_like(total_jumps), where=(total_jumps != 0))
         np.fill_diagonal(w, -lamda)
         steady_state = self._timeList / self.totalTime
         return w, steady_state
+
+
+class State:
+    _index = None
+    _t = None
+    _hidden = None
+
+    @property
+    def index(self):
+        return self._index
+
+    @property
+    def t(self):
+        return self._t
+
+    @property
+    def hidden(self):
+        return self._hidden
+
+    def __init__(self, index, t, hidden=False):
+        """
+
+        :param index: The index of representing the state
+        :param t: The amount of time spent in the micro state
+        :param hidden: A flag. True if the state is hidden
+        """
+        self._index = index
+        self._t = t
+        self._hidden = hidden
+
+    def add_time(self, t):
+        """
+        Adding time spent in the micro state
+
+        :param t: The amount of time to add.
+        :return:
+        """
+        self._t = self.t+t
 
 
 if __name__ == '__main__':
