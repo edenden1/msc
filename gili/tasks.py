@@ -280,16 +280,17 @@ class Model:
         plt.ylabel('Distance')
         plt.show()
 
-    def plot_trajectory(self):
+    def plot_trajectory(self, raw=False):
         """
         Plots the last sampled trajectory
 
+        :param raw: A flag to plot the real trajectory, ignoring the hidden status
         :return:
         """
         if self._trajectory is None:
             raise Exception('No trajectory was sampled')
 
-        self.trajectory.plot()
+        self.trajectory.plot(raw)
 
 
 class Trajectory(list):
@@ -392,46 +393,47 @@ class Trajectory(list):
                           t=t,
                           hidden=new_state_index >= self.n_observed
                           )
-        if current_state.hidden and new_state.hidden:
-            new_state.add_time(current_state.t)
-            self._timeList[self.n_observed] += t
-            self[-1] = new_state
-        else:
-            current_index = self.n_observed if current_state.hidden else current_state.index
-            new_index = self.n_observed if new_state.hidden else new_state.index
+        current_index = self.n_observed if current_state.hidden else current_state.index
+        new_index = self.n_observed if new_state.hidden else new_state.index
 
-            self._timeList[new_index] += t
-            self._counterList[new_index] += 1
-            self._jumpCounter[new_index, current_index] += 1
+        self._timeList[new_index] += t
+        self._counterList[new_index] += 0 if current_state.hidden and new_state.hidden else 1
+        self._jumpCounter[new_index, current_index] += 0 if current_state.hidden and new_state.hidden else 1
 
-            self.append(new_state)
+        self.append(new_state)
         # return new_state
 
-    def plot(self):
+    def plot(self, raw=False):
         """
         Plots the trajectory
 
+        :param raw: A flag to plot the real trajectory, ignoring the hidden status
         :return:
         """
         N = len(self)
 
         T = 0
         state = self[0]
-        index = self.n_observed if state.hidden else state.index
+        index = self.n_observed if state.hidden and not raw else state.index
         plt.figure()
         plt.hlines(index + 1, T, T + state.t)
         T += state.t
         for i in range(1, N):
             prev_index = index
             state = self[i]
-            index = self.n_observed if state.hidden else state.index
+            index = self.n_observed if state.hidden and not raw else state.index
 
             plt.vlines(T, prev_index + 1, index + 1, linestyles=':')
             plt.hlines(index + 1, T, T + state.t)
             T += state.t
 
         plt.xlim(0, T)
-        plt.ylim(0, self.n + 1 if self.n_hidden == 0 else self.n_observed+2)
+        plt.ylim(0, self.n + 1 if self.n_hidden == 0 or raw else self.n_observed+2)
+
+        yTicks = [y+1 for y in range(self.n)] if self.n_hidden == 0 or raw else [y+1 for y in range(self.n_observed+1)]
+        yLabels = [str(y) for y in yTicks] if self.n_hidden == 0 or raw else [str(y) for y in yTicks[:-1]]+['H']
+
+        plt.yticks(yTicks, yLabels)
 
         plt.xlabel('Time')
         plt.ylabel('State')
