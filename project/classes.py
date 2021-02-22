@@ -83,7 +83,7 @@ class Model:
         # return np.sum(np.multiply(self.steady_state_J, np.log(w_mul_p_st_T)))
         return (self.steady_state_J[0, 1] * np.log(self.w[0, 1] * self.steady_state_stalling[1] / (self.w[1, 0] * self.steady_state_stalling[0])))[0]
 
-    def __init__(self, n, w=None, dt=0.0001):
+    def __init__(self, n, w=None, dt=0.001):
         """
 
         :param n: The number of states
@@ -167,6 +167,7 @@ class Model:
             p_list.append(p)
 
         if plot_flag:
+            plt.figure()
             for i in range(self.n):
                 plt.plot(dt*np.arange(steps+1), np.array(p_list)[:, i], label=f'p{i+1}')
                 plt.xlim(0, T)
@@ -174,7 +175,7 @@ class Model:
             plt.legend(loc='upper right')
             plt.xlabel('Time')
             plt.ylabel('Probability')
-            plt.show()
+            # plt.show()
 
         return p
 
@@ -205,7 +206,7 @@ class Model:
             plt.legend(loc='upper right')
             plt.xlabel('Time')
             plt.ylabel('Probability')
-            plt.show()
+            # plt.show()
         return p
 
     def sample_trajectory(self, N, initialState=0, n_hidden=0):
@@ -254,10 +255,10 @@ class Model:
         w_conv = self._cache['rates_convergence']
         plt.plot([10**(i + 1) for i in range(len(w_conv))], w_conv)
         plt.xscale('log')
-        plt.title('The distance between the estimated rate matrix to the real one')
+        plt.title('The difference between the estimated rate matrix to the real one')
         plt.xlabel('Trajectory size (Log10 scale)')
-        plt.ylabel('Distance')
-        plt.show()
+        plt.ylabel('Difference')
+        # plt.show()
 
     def plot_steady_state_convergence(self):
         """
@@ -275,10 +276,10 @@ class Model:
         steady_state_conv = self._cache['steady_state_convergence']
         plt.plot([10**(i + 1) for i in range(len(steady_state_conv))], steady_state_conv)
         plt.xscale('log')
-        plt.title('The distance between the estimated steady state to the real one')
+        plt.title('The difference between the estimated steady state to the real one')
         plt.xlabel('Trajectory size (Log10 scale)')
-        plt.ylabel('Distance')
-        plt.show()
+        plt.ylabel('Difference')
+        # plt.show()
 
     def plot_trajectory(self, raw=False):
         """
@@ -300,7 +301,7 @@ class Trajectory(list):
     _jumpProbabilities = None  # The probability to jump from state j to state i. (n, n) numpy array.
     _counterList = None  # The count of each state. (n-n_hidden+1, 1) or (n, 1) numpy array
     _timeList = None  # The count of total time in each state. (n-n_hidden+1, 1) or (n, 1) numpy array.
-    _jumpCounter = None  # The count of the jumps from each state to each state. (n-n_hidden+1, n-n_hidden+1) or (n, n,) numpy array.
+    _jumpCounter = None  # The count of the jumps from each state to each state. (n-n_hidden+1, n-n_hidden+1) or (n, n) numpy array.
 
     @property
     def n(self):
@@ -437,7 +438,7 @@ class Trajectory(list):
 
         plt.xlabel('Time')
         plt.ylabel('State')
-        plt.show()
+        # plt.show()
 
     def estimate_from_statistics(self):
         """
@@ -489,48 +490,3 @@ class State:
         :return:
         """
         self._t = self.t+t
-
-
-def plot_Sigma(w):
-    """
-    Plots the partial and informed entropy productions as in Figure 4 b (2017 Hierarchical bounds...)
-
-    :param w: The rate matrix
-    :return:
-    """
-    pps_list = []
-    ips_list = []
-    Sigma_list = []
-    x_list = np.linspace(-6, 6, 120)
-    for x in x_list:
-        w_tmp = w.copy()
-        np.fill_diagonal(w_tmp, 0)
-        w_tmp[0, 1] = w[0, 1]*np.exp(x)
-        w_tmp[1, 0] = w[0, 1]*np.exp(-x)
-        np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
-        model_tmp = Model(n=4, w=w_tmp)
-        pps_list.append(model_tmp.passive_partial_Sigma)
-        ips_list.append(model_tmp.infromed_partial_Sigma)
-        Sigma_list.append(model_tmp.steady_state_Sigma)
-
-    plt.plot(x_list, pps_list, label='Passive')
-    plt.plot(x_list, ips_list, label='Informed')
-    plt.plot(x_list, Sigma_list, label='Total')
-    plt.legend()
-    plt.xlabel('x')
-    plt.yscale('log')
-    plt.show()
-
-
-if __name__ == '__main__':
-    # n = 10
-    # model = Model(n)
-    #
-    # N = 1000000
-    # model.sample_trajectory(N)
-    # w, steady_state = model.trajectory.estimate_from_statistics()
-    w = np.array([[-8, 9, 0, 2],
-                  [1, -20, 4, 6],
-                  [0, 10, -12, 5],
-                  [7, 1, 8, -13]], dtype=np.float)
-    plot_Sigma(w)
