@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
 
 
 class Model:
@@ -300,6 +301,7 @@ class Trajectory(list):
     _n_hidden = None  # The number of the hidden states. int.
     _jumpProbabilities = None  # The probability to jump from state j to state i. (n, n) numpy array.
     _counterList = None  # The count of each state. (n-n_hidden+1, 1) or (n, 1) numpy array
+    _counter_matrix = None  # The count of each jump: prev_state -> new_state. (n-n_hidden+1, n-n_hidden+1) or (n, n) numpy array
     _timeList = None  # The count of total time in each state. (n-n_hidden+1, 1) or (n, 1) numpy array.
     _jumpCounter = None  # The count of the jumps from each state to each state. (n-n_hidden+1, n-n_hidden+1) or (n, n) numpy array.
 
@@ -392,14 +394,16 @@ class Trajectory(list):
         t = np.random.exponential(1 / -self.w[new_state_index, new_state_index])
         new_state = State(index=new_state_index,
                           t=t,
-                          hidden=new_state_index >= self.n_observed
+                          hidden=new_state_index >= self.n_observed,
+                          prev_state=current_state
                           )
         current_index = self.n_observed if current_state.hidden else current_state.index
         new_index = self.n_observed if new_state.hidden else new_state.index
 
         self._timeList[new_index] += t
-        self._counterList[new_index] += 0 if current_state.hidden and new_state.hidden else 1
-        self._jumpCounter[new_index, current_index] += 0 if current_state.hidden and new_state.hidden else 1
+        if not(current_state.hidden and new_state.hidden):
+            self._counterList[new_index] += 1
+            self._jumpCounter[new_index, current_index] += 1
 
         self.append(new_state)
         # return new_state
@@ -458,6 +462,7 @@ class State:
     _index = None
     _t = None
     _hidden = None
+    _prev_state = None
 
     @property
     def index(self):
@@ -471,16 +476,26 @@ class State:
     def hidden(self):
         return self._hidden
 
-    def __init__(self, index, t, hidden=False):
+    @property
+    def prev_state(self):
+        return self._prev_state
+
+    @property
+    def prev_index(self):
+        return None if self.prev_state is None else self._prev_state.index
+
+    def __init__(self, index, t, hidden=False, prev_state=None):
         """
 
         :param index: The index of representing the state
         :param t: The amount of time spent in the micro state
         :param hidden: A flag. True if the state is hidden
+        :param prev_state: The previous state
         """
         self._index = index
         self._t = t
         self._hidden = hidden
+        self._prev_state = prev_state
 
     def add_time(self, t):
         """

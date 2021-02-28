@@ -57,7 +57,7 @@ def task1():
     model.sample_trajectory(N=10)
     model.plot_trajectory()
 
-    # Plot the numeric process to get the steady state
+    # Plots the numeric process to get the steady state
     n = 10
     model = Model(n)
     model.numeric_steady_state(plot_flag=True)
@@ -66,6 +66,7 @@ def task1():
 
 
 def task2():
+    # Plots the passive and informed partial entropy productions
     w = np.array([[-8, 9, 0, 2],
                   [1, -20, 4, 6],
                   [0, 10, -12, 5],
@@ -74,6 +75,6 @@ def task2():
 
 
 if __name__ == '__main__':
-    task1()
+    # task1()
     # task2()
     pass
