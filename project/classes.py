@@ -4,8 +4,9 @@ from scipy.stats import gaussian_kde
 
 
 class Model:
-    _n = None  # The number of states. A scalar.
     _w = None  # The rate matrix. (n, n) numpy array.
+    _real_to_observed = None  # A dictionary with the real state as key and the observed state as value. dict.
+    _observed_to_real = None  # A dictionary with the observed state as key and the possible real states as value. dict.
     _steady_state = None  # The steady state from the numeric calculations. (n, 1) numpy array.
     _steady_state_stalling = None  # The steady state at stalling. (n, 1) numpy array.
     _steady_state_J = None  # The steady state current. (n, n) numpy array.
@@ -16,13 +17,15 @@ class Model:
 
     @property
     def n(self):
-        return self._n
+        return len(self._real_to_observed.keys())
 
     @property
     def w(self):
-        if self._w is None:
-            self._w = self._initialize_w()
         return self._w
+
+    @property
+    def n_observed(self):
+        return len(set(self._real_to_observed.values()))
 
     @property
     def steady_state(self):
@@ -84,69 +87,28 @@ class Model:
         # return np.sum(np.multiply(self.steady_state_J, np.log(w_mul_p_st_T)))
         return (self.steady_state_J[0, 1] * np.log(self.w[0, 1] * self.steady_state_stalling[1] / (self.w[1, 0] * self.steady_state_stalling[0])))[0]
 
-    def __init__(self, n, w=None, dt=0.001):
+    def __init__(self, real_to_observed, w=None, dt=0.001):
         """
 
-        :param n: The number of states
-        :param w: The rate matrix. If not provided, it will be initialized when needed
+        :param real_to_observed: A dictionary with the real state as key and the observed state as value
+        :param w: The rate matrix. If not provided, it will be initialized as a random (n, n) numpy array
         :param dt: The time delta for the numeric calculations
         """
-        self._n = n
+
+        self._real_to_observed = real_to_observed
+        self._create_observed_to_real()
+
         if w is not None:
-            if w.shape[0] != w.shape[1] or w.shape[0] != n:
-                raise Exception("w must be in shape (n, n)")
+            if w.shape[0] != w.shape[1]:
+                raise Exception('w must be square')
             else:
                 self._w = w
+        else:
+            self._w = self._initialize_w()
+
+
         self._dt = dt
         self._cache = {}
-
-    def _initialize_w(self):
-        """
-        Initializes a random rate matrix
-
-        :return:
-        """
-        w = np.random.rand(self.n, self.n)
-        for i in range(self.n):
-            w[i, i] = -np.sum(w[:, i])+w[i, i]
-        return w
-
-    def _initialize_p(self):
-        """
-        Initializes a random probabilities vector
-
-        :return:
-        """
-        p = np.random.rand(self.n, 1)
-        p /= np.sum(p)
-        return p
-
-    def _numeric_one_step(self, p_prev, dt):
-        """
-        Executes one time step
-
-        :param p_prev: The previous probabilities vector
-        :param dt: The time delta
-        :return: The new probabilities vector
-        """
-        p_new = p_prev + np.dot(self.w, p_prev)*dt
-        return p_new
-
-    def _numeric_one_step_stalling(self, p_prev, dt):
-        """
-        Executes one time step at stalling
-
-        :param p_prev: The previous probabilities vector
-        :param dt: The time delta
-        :return: The new probabilities vector
-        """
-        w = self.w.copy()
-        w[0, 0] += w[1, 0]
-        w[1, 0] = 0
-        w[1, 1] += w[0, 1]
-        w[0, 1] = 0
-        p_new = p_prev + np.dot(w, p_prev)*dt
-        return p_new
 
     def numeric_steady_state(self, dt=None, T=10.0, plot_flag=False):
         """
@@ -164,7 +126,7 @@ class Model:
         p_list = [p]
 
         for i in range(steps):
-            p = self._numeric_one_step(p, dt)
+            p = p + np.dot(self.w, p)*dt
             p_list.append(p)
 
         if plot_flag:
@@ -195,8 +157,14 @@ class Model:
 
         p_list = [p]
 
+        w_stalling = self.w.copy()
+        w_stalling[0, 0] += w_stalling[1, 0]
+        w_stalling[1, 0] = 0
+        w_stalling[1, 1] += w_stalling[0, 1]
+        w_stalling[0, 1] = 0
+
         for i in range(steps):
-            p = self._numeric_one_step_stalling(p, dt)
+            p = p + np.dot(w_stalling, p) * dt
             p_list.append(p)
 
         if plot_flag:
@@ -210,7 +178,7 @@ class Model:
             # plt.show()
         return p
 
-    def sample_trajectory(self, N, initialState=0, n_hidden=0):
+    def sample_trajectory(self, N, initialState=0):
         """
         Samples a trajectory
 
@@ -219,7 +187,7 @@ class Model:
         :param n_hidden: The number of hidden states
         :return:
         """
-        self._trajectory = Trajectory(self.n, self.w, self.steady_state, initialState, n_hidden)
+        self._trajectory = Trajectory(self._real_to_observed, self.w, self.steady_state, initialState)
 
         rates_convergence = []
         steady_state_convergence = []
@@ -227,13 +195,13 @@ class Model:
         j = 1
         for i in range(1, N+1):
             self.trajectory.jump_state()
-            if n_hidden == 0:
+            if self.n == self.n_observed:
                 if i == 10**j:
                     w, steady_state = self.trajectory.estimate_from_statistics()
                     rates_convergence.append(np.linalg.norm(w-self.w))
                     steady_state_convergence.append(np.linalg.norm(steady_state-self.steady_state))
                     j += 1
-        if n_hidden == 0:
+        if self.n == self.n_observed:
             self._cache.update(dict(
                                     rates_convergence=rates_convergence,
                                     steady_state_convergence=steady_state_convergence
@@ -249,7 +217,7 @@ class Model:
         if self._trajectory is None:
             raise Exception('No trajectory was sampled')
 
-        if self._trajectory.n_hidden > 1:
+        if self.n != self.n_observed:
             raise Exception("Can't compute convergence with hidden layers")
 
         plt.figure()
@@ -270,7 +238,7 @@ class Model:
         if self._trajectory is None:
             raise Exception('No trajectory was sampled')
 
-        if self._trajectory.n_hidden > 1:
+        if self.n != self.n_observed:
             raise Exception("Can't compute convergence with hidden layers")
 
         plt.figure()
@@ -282,56 +250,95 @@ class Model:
         plt.ylabel('Difference')
         # plt.show()
 
-    def plot_trajectory(self, raw=False):
+    def plot_trajectory(self, real=False):
         """
         Plots the last sampled trajectory
 
-        :param raw: A flag to plot the real trajectory, ignoring the hidden status
+        :param real: A flag to plot the real trajectory, ignoring the hidden status
         :return:
         """
         if self._trajectory is None:
             raise Exception('No trajectory was sampled')
 
-        self.trajectory.plot(raw)
+        self.trajectory.plot(real)
+
+    def _create_observed_to_real(self):
+        self._observed_to_real = {}
+        for key, value in self._real_to_observed.items():
+            self._observed_to_real.setdefault(value, []).append(key)
+
+    def _initialize_w(self):
+        """
+        Initializes a random rate matrix
+
+        :return:
+        """
+        w = np.random.rand(self.n, self.n)
+        for i in range(self.n):
+            w[i, i] = -np.sum(w[:, i])+w[i, i]
+        return w
+
+    def _initialize_p(self):
+        """
+        Initializes a random probabilities vector
+
+        :return:
+        """
+        p = np.random.rand(self.n, 1)
+        p /= np.sum(p)
+        return p
 
 
 class Trajectory(list):
-    _n = None  # The number of states. int.
+    # n is the number of micro states
+    # n_observed is the number of observed(coarse-grained) states
+    _real_to_observed = None  # A dictionary with the real state as key and the observed state as value
     _w = None  # The rate matrix. (n, n) numpy array.
-    _n_hidden = None  # The number of the hidden states. int.
     _jumpProbabilities = None  # The probability to jump from state j to state i. (n, n) numpy array.
-    _counterList = None  # The count of each state. (n-n_hidden+1, 1) or (n, 1) numpy array
-    _counter_matrix = None  # The count of each jump: prev_state -> new_state. (n-n_hidden+1, n-n_hidden+1) or (n, n) numpy array
-    _timeList = None  # The count of total time in each state. (n-n_hidden+1, 1) or (n, 1) numpy array.
-    _jumpCounter = None  # The count of the jumps from each state to each state. (n-n_hidden+1, n-n_hidden+1) or (n, n) numpy array.
+    _observed_to_real = None  # A dictionary with the observed state as key and the possible real states list as value.
+    _total_time_list = None  # THe total time spent in each state. (n_observed, n_observed) numpy array
+    _counter_list = None  # The count of each observed state occurrence. (n_observed, 1) numpy array
+    _jump_counter = None  # The total observed jumps: i->j. (n_observed, n_observed) numpy array
+    _time_matrix = None  # A 3D matrix with a list of 2nd order waiting times in each element. (n_observed, n_observed, n_observed) numpy array, dtype=list
+    _prev_observed = None  # Previous observed state
+    _tmp_t = None  # Temporary time spent in the current observed state
 
     @property
     def n(self):
-        return self._n
+        return self._w.shape[0]
 
     @property
     def w(self):
         return self._w
 
     @property
-    def n_hidden(self):
-        return self._n_hidden
+    def real_to_observed(self):
+        return self._real_to_observed
+
+    @property
+    def obserbed_states(self):
+        return list(set(self.real_to_observed.values()))
 
     @property
     def n_observed(self):
-        return self.n-self.n_hidden
+        """
+        The number of the observed states
+
+        :return:
+        """
+        return len(self.obserbed_states)
 
     @property
     def steady_state(self):
         return self._steady_state
 
     @property
-    def totalTime(self):
-        return np.sum(self._timeList)
+    def total_time(self):
+        return np.sum(self._total_time_list)
 
     @property
-    def meanTime(self):
-        return np.divide(self._timeList, self._counterList, out=np.zeros_like(self._timeList), where=(self._counterList != 0))
+    def mean_time(self):
+        return np.divide(self._total_time_list, self._counter_list, out=np.zeros_like(self._total_time_list), where=(self._counter_list != 0))
 
     @property
     def jumpProbabilities(self):
@@ -349,36 +356,40 @@ class Trajectory(list):
         ret += np.sum(tmp)/2.0
         return ret
 
-    def __init__(self, n, w, steady_state, initialStateIndex, n_hidden=0):
+    def __init__(self, real_to_observed, w, steady_state, initial_state_index):
         """
 
-        :param n: The number of states
+        :param real_to_observed: A dictionary with the real state as key and the observed state as value
         :param w: The rate matrix
         :param steady_state: The steady state probabilities
-        :param initialStateIndex: The index of the initial state
-        :param hidden: The number of hidden layers
+        :param initial_state_index: The index of the initial state
         """
         super().__init__()
-        self._n = n
         self._w = w.copy()
-        self._steady_state = steady_state.copy()
-        self._n_hidden = n_hidden
+        self._steady_state = steady_state
+        self._real_to_observed = real_to_observed
+        self._create_observed_to_real()
 
         self._jumpProbabilities = self.w/(-np.diagonal(self.w)).reshape(1, self.n)
         np.fill_diagonal(self._jumpProbabilities, 0)
 
-        arrays_size = n if self.n_hidden == 0 else self.n_observed+1
-        self._timeList = np.zeros((arrays_size, 1))
-        self._counterList = np.zeros((arrays_size, 1))
-        self._jumpCounter = np.zeros((arrays_size, arrays_size))
+        # self._time_matrix = [[[[] for k in range(self.n_observed)] for j in range(self.n_observed)] for i in range(self.n_observed)]
+        # self._time_matrix = np.array(self._time_matrix, dtype=list)
 
-        t = np.random.exponential(1 / -self.w[initialStateIndex, initialStateIndex])
-        self._timeList[initialStateIndex] += t
-        self._counterList[initialStateIndex] += 1
+        self._time_matrix = np.frompyfunc(list, 0, 1)(np.empty((self.n_observed,)*3, dtype=object))
 
-        state = State(index=initialStateIndex,
-                      t=t,
-                      hidden=(initialStateIndex >= self.n_observed)
+        self._total_time_list = np.zeros((self.n_observed, 1))
+        self._counter_list = np.zeros((self.n_observed, 1))
+        self._jumpCounter = np.zeros((self.n_observed, self.n_observed))
+
+        t = np.random.exponential(1 / -self.w[initial_state_index, initial_state_index])
+        self._tmp_t = t
+        initial_state_observed = self._real_to_observed[initial_state_index]
+        self._total_time_list[initial_state_observed] += t
+        self._counter_list[initial_state_observed] += 1
+
+        state = State(index=initial_state_index,
+                      t=t
                       )
 
         self.append(state)
@@ -393,50 +404,58 @@ class Trajectory(list):
         new_state_index = np.random.choice(np.arange(self.n), p=self.jumpProbabilities[:, current_state.index])
         t = np.random.exponential(1 / -self.w[new_state_index, new_state_index])
         new_state = State(index=new_state_index,
-                          t=t,
-                          hidden=new_state_index >= self.n_observed,
-                          prev_state=current_state
+                          t=t
                           )
-        current_index = self.n_observed if current_state.hidden else current_state.index
-        new_index = self.n_observed if new_state.hidden else new_state.index
 
-        self._timeList[new_index] += t
-        if not(current_state.hidden and new_state.hidden):
-            self._counterList[new_index] += 1
-            self._jumpCounter[new_index, current_index] += 1
+        current_observed = self.real_to_observed[current_state.index]
+        new_observed = self.real_to_observed[new_state.index]
+
+        self._total_time_list[new_observed] += t
+        if current_observed != new_observed:
+            if self._prev_observed is not None:
+                # import pdb
+                # pdb.set_trace()
+                self._time_matrix[self._prev_observed][current_observed][new_observed].append(self._tmp_t)
+            self._tmp_t = t
+            self._counter_list[new_observed] += 1
+            self._jumpCounter[new_observed, current_observed] += 1
+            self._prev_observed = current_observed
+        else:
+            if self._prev_observed is not None:
+                self._tmp_t += t
 
         self.append(new_state)
         # return new_state
 
-    def plot(self, raw=False):
+    def plot(self, real=False):
         """
         Plots the trajectory
 
-        :param raw: A flag to plot the real trajectory, ignoring the hidden status
+        :param real: A flag. If True plots the real trajectory, if False plots the observed trajectory. Default False.
         :return:
         """
         N = len(self)
 
         T = 0
         state = self[0]
-        index = self.n_observed if state.hidden and not raw else state.index
+        index = state.index if real else self.real_to_observed[state.index]
         plt.figure()
         plt.hlines(index + 1, T, T + state.t)
         T += state.t
         for i in range(1, N):
             prev_index = index
             state = self[i]
-            index = self.n_observed if state.hidden and not raw else state.index
+            index = state.index if real else self.real_to_observed[state.index]
 
             plt.vlines(T, prev_index + 1, index + 1, linestyles=':')
             plt.hlines(index + 1, T, T + state.t)
             T += state.t
 
         plt.xlim(0, T)
-        plt.ylim(0, self.n + 1 if self.n_hidden == 0 or raw else self.n_observed+2)
+        plt.ylim(0, self.n + 1 if real else self.n_observed+1)
 
-        yTicks = [y+1 for y in range(self.n)] if self.n_hidden == 0 or raw else [y+1 for y in range(self.n_observed+1)]
-        yLabels = [str(y) for y in yTicks] if self.n_hidden == 0 or raw else [str(y) for y in yTicks[:-1]]+['H']
+        yTicks = [y+1 for y in range(self.n)] if real else [y+1 for y in range(self.n_observed)]
+        yLabels = [str(y) for y in yTicks] if real else [f'observed-{y}' for y in yTicks]
 
         plt.yticks(yTicks, yLabels)
 
@@ -450,19 +469,65 @@ class Trajectory(list):
 
         :return: w, steady_state
         """
-        lamda = np.divide(1, self.meanTime, out=np.zeros_like(self.meanTime), where=(self.meanTime != 0))
+        lamda = np.divide(1, self.mean_time, out=np.zeros_like(self.mean_time), where=(self.mean_time != 0))
         total_jumps = np.sum(self._jumpCounter, axis=0, keepdims=True)
         w = self._jumpCounter * np.divide(lamda.T, total_jumps, out=np.zeros_like(total_jumps), where=(total_jumps != 0))
         np.fill_diagonal(w, -lamda)
-        steady_state = self._timeList / self.totalTime
+        steady_state = self._total_time_list / self.total_time
         return w, steady_state
+
+    def _create_observed_to_real(self):
+        """
+        Creates the dictionary self._observed_to_real
+
+        :return:
+        """
+        self._observed_to_real = {}
+        for key, value in self.real_to_observed.items():
+            self._observed_to_real.setdefault(value, []).append(key)
+
+    def _get_p_ijk(self, i, j, k):
+        """
+        The probability to observe the sequence i -> j -> k
+
+        :param i: First observed state
+        :param j: Second observed state
+        :param k: Third observed state
+        :return:
+        """
+        return self._counter_list[j, i] * self._get_p_ij_to_jk(i, j, k)
+
+    def _get_p_ij_to_jk(self, i, j, k):
+        """
+        The probability of j -> k if we know the jump before was i -> j
+
+        :param i: First observed state
+        :param j: Second observed state
+        :param k: Third observed state
+        :return:
+        """
+        if len(self._time_matrix[i][j][k]) < 2:
+            return 0
+
+        min_t = np.min(self._time_matrix[i][j][k])
+        max_t = np.max(self._time_matrix[i][j][k])
+        kde_func = gaussian_kde(self._time_matrix[i][j][k], bw_method=min_t/10000.0)
+        dt = (max_t+min_t)/10000.0
+        p = np.sum(dt*kde_func(np.arange(dt, min_t+max_t+dt, dt)))
+        return p
+
+    @property
+    def s_dot_aff(self):
+        ret = 0
+        sequences_list = [(i, j, k) for i in range(self.n_observed) for j in range(self.n_observed) for k in range(self.n_observed)]
+        for i, j, k in sequences_list:
+            ret += 1.0/self.total_time * self._counter_list[j, k] * self._get_p_ij_to_jk(i, j, k)**2 / self._get_p_ij_to_jk(k, j, i)
+        return ret
 
 
 class State:
     _index = None
     _t = None
-    _hidden = None
-    _prev_state = None
 
     @property
     def index(self):
@@ -472,30 +537,14 @@ class State:
     def t(self):
         return self._t
 
-    @property
-    def hidden(self):
-        return self._hidden
-
-    @property
-    def prev_state(self):
-        return self._prev_state
-
-    @property
-    def prev_index(self):
-        return None if self.prev_state is None else self._prev_state.index
-
-    def __init__(self, index, t, hidden=False, prev_state=None):
+    def __init__(self, index, t):
         """
 
-        :param index: The index of representing the state
+        :param index: The index representing the state
         :param t: The amount of time spent in the micro state
-        :param hidden: A flag. True if the state is hidden
-        :param prev_state: The previous state
         """
         self._index = index
         self._t = t
-        self._hidden = hidden
-        self._prev_state = prev_state
 
     def add_time(self, t):
         """

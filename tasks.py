@@ -14,13 +14,14 @@ def plot_Sigma(w):
     ips_list = []
     Sigma_list = []
     x_list = np.linspace(-6, 6, 120)
+    real_to_observed = {i: i for i in range(w.shape[0])}
     for x in x_list:
         w_tmp = w.copy()
         np.fill_diagonal(w_tmp, 0)
         w_tmp[0, 1] = w[0, 1]*np.exp(x)
         w_tmp[1, 0] = w[0, 1]*np.exp(-x)
         np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
-        model_tmp = Model(n=4, w=w_tmp, dt=0.0001)
+        model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
         pps_list.append(model_tmp.passive_partial_Sigma)
         ips_list.append(model_tmp.infromed_partial_Sigma)
         Sigma_list.append(model_tmp.steady_state_Sigma)
@@ -37,7 +38,8 @@ def plot_Sigma(w):
 def task1():
     # Estimates the rate matrix and the steady state from a trajectory statistics
     n = 4
-    model = Model(n)
+    real_to_observed = {i: i for i in range(n)}
+    model = Model(real_to_observed)
     N = 1000000
     model.sample_trajectory(N)
     w, steady_state = model.trajectory.estimate_from_statistics()
@@ -59,7 +61,8 @@ def task1():
 
     # Plots the numeric process to get the steady state
     n = 10
-    model = Model(n)
+    real_to_observed = {i: i for i in range(n)}
+    model = Model(real_to_observed)
     model.numeric_steady_state(plot_flag=True)
 
     plt.show()
@@ -72,6 +75,10 @@ def task2():
                   [0, 10, -12, 5],
                   [7, 1, 8, -13]], dtype=np.float)
     plot_Sigma(w)
+
+
+def task3():
+    pass
 
 
 if __name__ == '__main__':
