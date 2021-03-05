@@ -262,6 +262,9 @@ class Model:
 
         self.trajectory.plot(real)
 
+    def get_Sigma_aff(self):
+        return self._trajectory.Sigma_aff
+
     def _create_observed_to_real(self):
         self._observed_to_real = {}
         for key, value in self._real_to_observed.items():
@@ -302,6 +305,7 @@ class Trajectory(list):
     _time_matrix = None  # A 3D matrix with a list of 2nd order waiting times in each element. (n_observed, n_observed, n_observed) numpy array, dtype=list
     _prev_observed = None  # Previous observed state
     _tmp_t = None  # Temporary time spent in the current observed state
+    _p_ij_to_jk_matrix = None  # Cache of p_ij_to_jk for (i, j, k). (n_observed, n_observed, n_observed) numpy array
 
     @property
     def n(self):
@@ -352,7 +356,7 @@ class Trajectory(list):
         :return:
         """
         ret = np.log(self.steady_state[self[0][0]]/self.steady_state[self[-1][0]])[0]
-        tmp = np.multiply((self._jumpCounter-self._jumpCounter.T), np.log(np.divide(self.w, self.w.T)))
+        tmp = np.multiply((self._jump_counter-self._jump_counter.T), np.log(np.divide(self.w, self.w.T)))
         ret += np.sum(tmp)/2.0
         return ret
 
@@ -377,10 +381,12 @@ class Trajectory(list):
         # self._time_matrix = np.array(self._time_matrix, dtype=list)
 
         self._time_matrix = np.frompyfunc(list, 0, 1)(np.empty((self.n_observed,)*3, dtype=object))
+        self._kde_matrix = np.empty((self.n_observed,) * 3, dtype=object)
+        self._p_ij_to_jk_matrix = -np.ones((self.n_observed,)*3, dtype=np.float)
 
         self._total_time_list = np.zeros((self.n_observed, 1))
         self._counter_list = np.zeros((self.n_observed, 1))
-        self._jumpCounter = np.zeros((self.n_observed, self.n_observed))
+        self._jump_counter = np.zeros((self.n_observed, self.n_observed))
 
         t = np.random.exponential(1 / -self.w[initial_state_index, initial_state_index])
         self._tmp_t = t
@@ -418,7 +424,7 @@ class Trajectory(list):
                 self._time_matrix[self._prev_observed][current_observed][new_observed].append(self._tmp_t)
             self._tmp_t = t
             self._counter_list[new_observed] += 1
-            self._jumpCounter[new_observed, current_observed] += 1
+            self._jump_counter[new_observed, current_observed] += 1
             self._prev_observed = current_observed
         else:
             if self._prev_observed is not None:
@@ -470,8 +476,8 @@ class Trajectory(list):
         :return: w, steady_state
         """
         lamda = np.divide(1, self.mean_time, out=np.zeros_like(self.mean_time), where=(self.mean_time != 0))
-        total_jumps = np.sum(self._jumpCounter, axis=0, keepdims=True)
-        w = self._jumpCounter * np.divide(lamda.T, total_jumps, out=np.zeros_like(total_jumps), where=(total_jumps != 0))
+        total_jumps = np.sum(self._jump_counter, axis=0, keepdims=True)
+        w = self._jump_counter * np.divide(lamda.T, total_jumps, out=np.zeros_like(total_jumps), where=(total_jumps != 0))
         np.fill_diagonal(w, -lamda)
         steady_state = self._total_time_list / self.total_time
         return w, steady_state
@@ -495,7 +501,7 @@ class Trajectory(list):
         :param k: Third observed state
         :return:
         """
-        return self._counter_list[j, i] * self._get_p_ij_to_jk(i, j, k)
+        return self._jump_counter[j, i] * self._get_p_ij_to_jk(i, j, k)
 
     def _get_p_ij_to_jk(self, i, j, k):
         """
@@ -506,22 +512,78 @@ class Trajectory(list):
         :param k: Third observed state
         :return:
         """
-        if len(self._time_matrix[i][j][k]) < 2:
+        # if len(self._time_matrix[i][j][k]) < 2:
+        #     self._p_ij_to_jk_matrix[i, j, k] = 0
+        #
+        # if self._p_ij_to_jk_matrix[i][j][k] == -1:
+        #     min_t = np.min(self._time_matrix[i][j][k])
+        #     max_t = np.max(self._time_matrix[i][j][k])
+        #     # kde_func = gaussian_kde(self._time_matrix[i][j][k], bw_method=min_t/5.0)
+        #     # dt = (max_t+min_t)/10000.0
+        #     # self._p_ij_to_jk_matrix[i, j, k] = np.sum(dt*kde_func(np.arange(dt, min_t+max_t+dt, dt)))
+        #     self._p_ij_to_jk_matrix[i, j, k] = self._get_kde_func(i, j, k).integrate_box_1d(0, max_t+min_t)
+        #     # import pdb
+        #     # pdb.set_trace()
+        #     print(i, ', ', j, ', ', k)
+        #     # print(self._p_ij_to_jk_matrix[i][j][k])
+        # return self._p_ij_to_jk_matrix[i][j][k]
+        if self._p_ij_to_jk_matrix[i, j, k] == -1:
+            N1 = len(self._time_matrix[i, j, k])
+            N2 = len(self._time_matrix.sum(axis=0)[j, k])
+            self._p_ij_to_jk_matrix[i, j, k] = N1/N2 if N2!=0 else 0
+        return self._p_ij_to_jk_matrix[i, j, k]
+
+    def _get_kde_func(self, i, j, k):
+        if self._kde_matrix[i, j, k] is None:
+            min_t = np.min(self._time_matrix[i][j][k])
+            kde_func = gaussian_kde(self._time_matrix[i][j][k], bw_method=min_t / 5.0)
+            self._kde_matrix[i, j, k] = kde_func
+        return self._kde_matrix[i, j, k]
+
+    def _get_D(self, i1, j1, k1, i2, j2, k2):
+        if i1!=j1 and j1!=k1  and i1!=k1 and i2!=j2 and j2!=k2 and i2!=k2:
+            min_t = np.min(self._time_matrix[i1][j1][k1] + self._time_matrix[i2][j2][k2])
+            max_t = np.max(self._time_matrix[i1][j1][k1] + self._time_matrix[i2][j2][k2])
+            kde_func_1 = gaussian_kde(self._time_matrix[i1][j1][k1], bw_method=1e-3)
+            kde_func_2 = gaussian_kde(self._time_matrix[i2][j2][k2], bw_method=1e-3)
+            dt = 1e-4
+            t_arr = np.linspace(min_t-dt, max_t+dt, 10000)
+            kde_1_evaluate = kde_func_1.evaluate(t_arr)
+            kde_2_evaluate = kde_func_2.evaluate(t_arr)
+            print(np.min(kde_2_evaluate))
+            # import pdb
+            # pdb.set_trace()
+            ret = (t_arr[1]-t_arr[0]) * np.sum(kde_1_evaluate * np.log(np.divide(kde_1_evaluate, kde_2_evaluate, out=np.ones_like(kde_2_evaluate), where=(kde_2_evaluate>1e-3)), out=np.zeros_like(kde_1_evaluate), where=(kde_1_evaluate>1e-3)))
+            print(ret)
+            return ret
+        else:
             return 0
 
-        min_t = np.min(self._time_matrix[i][j][k])
-        max_t = np.max(self._time_matrix[i][j][k])
-        kde_func = gaussian_kde(self._time_matrix[i][j][k], bw_method=min_t/10000.0)
-        dt = (max_t+min_t)/10000.0
-        p = np.sum(dt*kde_func(np.arange(dt, min_t+max_t+dt, dt)))
-        return p
+    @property
+    def Sigma_aff(self):
+        print('in sigma affinity')
+        # print(self._time_matrix)
+        ret = 0
+        for i in range(self.n_observed):
+            for j in range(self.n_observed):
+                for k in range(self.n_observed):
+                    # print(i, ', ', j, ', ', k)
+                    p_ij_to_jk = self._get_p_ij_to_jk(i, j, k)
+                    p_kj_to_ji = self._get_p_ij_to_jk(k, j, i)
+                    tmp = np.log(p_ij_to_jk / p_kj_to_ji if p_ij_to_jk != 0 and p_kj_to_ji != 0 else 1)
+                    # tmp = np.log(np.divide(self._get_p_ij_to_jk(i, j, k), self._get_p_ij_to_jk(k, j, i)))
+                    ret += self._get_p_ijk(i, j, k) * tmp / self.total_time
+        return ret
 
     @property
-    def s_dot_aff(self):
+    def Sigme_WTD(self):
         ret = 0
-        sequences_list = [(i, j, k) for i in range(self.n_observed) for j in range(self.n_observed) for k in range(self.n_observed)]
-        for i, j, k in sequences_list:
-            ret += 1.0/self.total_time * self._counter_list[j, k] * self._get_p_ij_to_jk(i, j, k)**2 / self._get_p_ij_to_jk(k, j, i)
+        for i in range(self.n_observed):
+            for j in range(self.n_observed):
+                for k in range(self.n_observed):
+                    if len(self._observed_to_real[j]) > 1:
+                        print(i, ', ', j, ', ', k)
+                        ret += self._get_p_ijk(i, j, k) * self._get_D(i, j, k, k, j, i) / self.total_time
         return ret
 
 

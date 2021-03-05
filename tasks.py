@@ -78,10 +78,29 @@ def task2():
 
 
 def task3():
-    pass
+    real_to_observed = {0: 0,
+                        1: 1,
+                        2: 2,
+                        3: 2
+                        }
+
+    w = np.array([[-11, 2, 0, 1],
+                  [3, -52.2, 2, 35],
+                  [0, 50, -77, 0.7],
+                  [8, 0.2, 75, -36.7]], dtype=np.float)
+
+    model = Model(real_to_observed,
+                  w=w)
+
+    N = 1000000
+    model.sample_trajectory(N)
+    # print(model.get_Sigma_aff())
+    print(model.trajectory.Sigme_WTD)
+    return model
 
 
 if __name__ == '__main__':
     # task1()
     # task2()
+    model = task3()
     pass
