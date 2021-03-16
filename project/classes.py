@@ -534,12 +534,10 @@ class Trajectory(list):
         return self._kde_matrix[i, j, k]
 
     def _get_D(self, i1, j1, k1, i2, j2, k2):
-        # if i1!=j1 and j1!=k1  and i1!=k1 and i2!=j2 and j2!=k2 and i2!=k2:
         # min_t = np.min(self._time_matrix[i1][j1][k1]+self._time_matrix[i2][j2][k2])
         max_t = np.max(self._time_matrix[i1][j1][k1]+self._time_matrix[i2][j2][k2])
         kde_func_1 = self._get_kde_func(i1, j1, k1)
         kde_func_2 = self._get_kde_func(i2, j2, k2)
-        # log_t_arr = np.arange(np.log(min_t)-0.1, np.log(max_t)+0.1, 1e-4)
         t_arr = np.linspace(0, 1.5*max_t, 5000)
         # boundaries = [0.0, None]
         # _, kde_1 = kde_func_1.pdf(t_arr, reflect=boundaries)
@@ -548,11 +546,6 @@ class Trajectory(list):
         kde_2 = kde_func_2(t_arr) + kde_func_2(-t_arr)
         tmp = np.divide(kde_1, kde_2, out=np.ones_like(kde_2), where=(kde_2 > 1e-10))
         ret = (t_arr[1]-t_arr[0]) * np.sum(np.multiply(kde_1, np.log(tmp, out=np.zeros_like(kde_1), where=(kde_1 > 1e-10))))
-        # for i in range(len(log_t_arr)):
-        #     if kde_1[i]>1e-10 and kde_2[i]>1e-10:
-        #         ret += jacobian * kde_1[i] * np.log(kde_1[i]/kde_2[i])
-        # ret = np.sum(jacobian * kde_1 * np.log(tmp, out=np.zeros_like(kde_1), where=(kde_1 > 1e-10)))
-        # ret = integrate.quad(lambda x: kde_func_1(np.log(x))*np.log(kde_func_1(np.log(x))/kde_func_2(np.log(x))), min_t, max_t)[0]
         return ret
 
     @property
@@ -567,7 +560,6 @@ class Trajectory(list):
                     p_ij_to_jk = self._get_p_ij_to_jk(i, j, k)
                     p_kj_to_ji = self._get_p_ij_to_jk(k, j, i)
                     tmp = np.log(p_ij_to_jk / p_kj_to_ji if p_ij_to_jk != 0 and p_kj_to_ji != 0 else 1)
-                    # tmp = np.log(np.divide(self._get_p_ij_to_jk(i, j, k), self._get_p_ij_to_jk(k, j, i)))
                     ret += self._get_p_ijk(i, j, k) * tmp / self.total_time
         return ret
 
