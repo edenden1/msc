@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
+import kalepy as kale
 
 
 class Model:
@@ -263,7 +264,13 @@ class Model:
         self.trajectory.plot(real)
 
     def get_Sigma_aff(self):
-        return self._trajectory.Sigma_aff
+        return self.trajectory.Sigma_aff
+
+    def get_Sigma_WTD(self):
+        return self.trajectory.Sigma_WTD
+
+    def get_Sigma_KLD(self):
+        return self.get_Sigma_aff() + self.get_Sigma_WTD()
 
     def _create_observed_to_real(self):
         self._observed_to_real = {}
@@ -512,56 +519,45 @@ class Trajectory(list):
         :param k: Third observed state
         :return:
         """
-        # if len(self._time_matrix[i][j][k]) < 2:
-        #     self._p_ij_to_jk_matrix[i, j, k] = 0
-        #
-        # if self._p_ij_to_jk_matrix[i][j][k] == -1:
-        #     min_t = np.min(self._time_matrix[i][j][k])
-        #     max_t = np.max(self._time_matrix[i][j][k])
-        #     # kde_func = gaussian_kde(self._time_matrix[i][j][k], bw_method=min_t/5.0)
-        #     # dt = (max_t+min_t)/10000.0
-        #     # self._p_ij_to_jk_matrix[i, j, k] = np.sum(dt*kde_func(np.arange(dt, min_t+max_t+dt, dt)))
-        #     self._p_ij_to_jk_matrix[i, j, k] = self._get_kde_func(i, j, k).integrate_box_1d(0, max_t+min_t)
-        #     # import pdb
-        #     # pdb.set_trace()
-        #     print(i, ', ', j, ', ', k)
-        #     # print(self._p_ij_to_jk_matrix[i][j][k])
-        # return self._p_ij_to_jk_matrix[i][j][k]
         if self._p_ij_to_jk_matrix[i, j, k] == -1:
             N1 = len(self._time_matrix[i, j, k])
-            N2 = len(self._time_matrix.sum(axis=0)[j, k])
-            self._p_ij_to_jk_matrix[i, j, k] = N1/N2 if N2!=0 else 0
+            N2 = len(self._time_matrix.sum(axis=2)[i, j])
+            self._p_ij_to_jk_matrix[i, j, k] = N1/N2 if N2 != 0 else 0
         return self._p_ij_to_jk_matrix[i, j, k]
 
     def _get_kde_func(self, i, j, k):
         if self._kde_matrix[i, j, k] is None:
-            min_t = np.min(self._time_matrix[i][j][k])
-            kde_func = gaussian_kde(self._time_matrix[i][j][k], bw_method=min_t / 5.0)
+            # min_t = np.min(self._time_matrix[i][j][k])
+            kde_func = gaussian_kde(self._time_matrix[i][j][k])
+            # kde_func = kale.KDE(self._time_matrix[i][j][k])
             self._kde_matrix[i, j, k] = kde_func
         return self._kde_matrix[i, j, k]
 
     def _get_D(self, i1, j1, k1, i2, j2, k2):
-        if i1!=j1 and j1!=k1  and i1!=k1 and i2!=j2 and j2!=k2 and i2!=k2:
-            min_t = np.min(self._time_matrix[i1][j1][k1] + self._time_matrix[i2][j2][k2])
-            max_t = np.max(self._time_matrix[i1][j1][k1] + self._time_matrix[i2][j2][k2])
-            kde_func_1 = gaussian_kde(self._time_matrix[i1][j1][k1], bw_method=1e-3)
-            kde_func_2 = gaussian_kde(self._time_matrix[i2][j2][k2], bw_method=1e-3)
-            dt = 1e-4
-            t_arr = np.linspace(min_t-dt, max_t+dt, 10000)
-            kde_1_evaluate = kde_func_1.evaluate(t_arr)
-            kde_2_evaluate = kde_func_2.evaluate(t_arr)
-            print(np.min(kde_2_evaluate))
-            # import pdb
-            # pdb.set_trace()
-            ret = (t_arr[1]-t_arr[0]) * np.sum(kde_1_evaluate * np.log(np.divide(kde_1_evaluate, kde_2_evaluate, out=np.ones_like(kde_2_evaluate), where=(kde_2_evaluate>1e-3)), out=np.zeros_like(kde_1_evaluate), where=(kde_1_evaluate>1e-3)))
-            print(ret)
-            return ret
-        else:
-            return 0
+        # if i1!=j1 and j1!=k1  and i1!=k1 and i2!=j2 and j2!=k2 and i2!=k2:
+        # min_t = np.min(self._time_matrix[i1][j1][k1]+self._time_matrix[i2][j2][k2])
+        max_t = np.max(self._time_matrix[i1][j1][k1]+self._time_matrix[i2][j2][k2])
+        kde_func_1 = self._get_kde_func(i1, j1, k1)
+        kde_func_2 = self._get_kde_func(i2, j2, k2)
+        # log_t_arr = np.arange(np.log(min_t)-0.1, np.log(max_t)+0.1, 1e-4)
+        t_arr = np.linspace(0, 1.5*max_t, 5000)
+        # boundaries = [0.0, None]
+        # _, kde_1 = kde_func_1.pdf(t_arr, reflect=boundaries)
+        # _, kde_2 = kde_func_2.pdf(t_arr, reflect=boundaries)
+        kde_1 = kde_func_1(t_arr) + kde_func_1(-t_arr)
+        kde_2 = kde_func_2(t_arr) + kde_func_2(-t_arr)
+        tmp = np.divide(kde_1, kde_2, out=np.ones_like(kde_2), where=(kde_2 > 1e-10))
+        ret = (t_arr[1]-t_arr[0]) * np.sum(np.multiply(kde_1, np.log(tmp, out=np.zeros_like(kde_1), where=(kde_1 > 1e-10))))
+        # for i in range(len(log_t_arr)):
+        #     if kde_1[i]>1e-10 and kde_2[i]>1e-10:
+        #         ret += jacobian * kde_1[i] * np.log(kde_1[i]/kde_2[i])
+        # ret = np.sum(jacobian * kde_1 * np.log(tmp, out=np.zeros_like(kde_1), where=(kde_1 > 1e-10)))
+        # ret = integrate.quad(lambda x: kde_func_1(np.log(x))*np.log(kde_func_1(np.log(x))/kde_func_2(np.log(x))), min_t, max_t)[0]
+        return ret
 
     @property
     def Sigma_aff(self):
-        print('in sigma affinity')
+        # print('in sigma affinity')
         # print(self._time_matrix)
         ret = 0
         for i in range(self.n_observed):
@@ -576,14 +572,15 @@ class Trajectory(list):
         return ret
 
     @property
-    def Sigme_WTD(self):
+    def Sigma_WTD(self):
         ret = 0
         for i in range(self.n_observed):
             for j in range(self.n_observed):
-                for k in range(self.n_observed):
-                    if len(self._observed_to_real[j]) > 1:
-                        print(i, ', ', j, ', ', k)
-                        ret += self._get_p_ijk(i, j, k) * self._get_D(i, j, k, k, j, i) / self.total_time
+                if i != j and len(self._observed_to_real[j]) > 1:
+                    for k in range(self.n_observed):
+                        if j != k and i != k:
+                            print(i, ', ', j, ', ', k)
+                            ret += self._get_p_ijk(i, j, k) * self._get_D(i, j, k, k, j, i) / self.total_time
         return ret
 
 
