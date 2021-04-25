@@ -25,7 +25,7 @@ def plot_Sigma2(w):
         np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
         model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
         pps_list.append(model_tmp.passive_partial_Sigma)
-        ips_list.append(model_tmp.infromed_partial_Sigma)
+        ips_list.append(model_tmp.informed_partial_Sigma)
         Sigma_list.append(model_tmp.steady_state_Sigma)
 
     plt.plot(x_list, pps_list, label='Passive')
@@ -61,7 +61,7 @@ def plot_Sigma3(real_to_observed, w):
         model_tmp.sample_trajectory(N)
         # model_tmp = get_model(real_to_observed, w, x, N)
         pps_list.append(model_tmp.passive_partial_Sigma)
-        ips_list.append(model_tmp.infromed_partial_Sigma)
+        ips_list.append(model_tmp.informed_partial_Sigma)
         Sigma_list.append(model_tmp.steady_state_Sigma)
         Sigma_aff_tmp = model_tmp.get_Sigma_aff()
         Sigma_WTD_tmp = model_tmp.get_Sigma_WTD()
@@ -174,5 +174,21 @@ def get_model(real_to_observed, w, x, N):
 if __name__ == '__main__':
     # task1()
     # task2()
-    task3()
+    # task3()
+    real_to_observed = {0: 0,
+                        1: 1,
+                        2: 2,
+                        3: 2
+                        }
+
+    w = np.array([[-11, 2, 0, 1],
+                  [3, -52.2, 2, 35],
+                  [0, 50, -77, 0.7],
+                  [8, 0.2, 75, -36.7]], dtype=np.float)
+
+    model = Model(real_to_observed, w, 0.0001)
+    model.sample_trajectory(N=10**6)
+    trj = model.trajectory
+    w_est, p_est = trj.estimate_from_statistics()
+    model2 = Model(real_to_observed={i:i for i in range(3)}, w=w_est)
     pass

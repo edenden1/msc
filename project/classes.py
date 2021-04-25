@@ -77,7 +77,7 @@ class Model:
         return self._steady_state_stalling
 
     @property
-    def infromed_partial_Sigma(self):
+    def informed_partial_Sigma(self):
         """
         The informed partial entropy production
 
