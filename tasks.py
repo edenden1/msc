@@ -171,24 +171,48 @@ def get_model(real_to_observed, w, x, N):
     return model
 
 
-if __name__ == '__main__':
-    # task1()
-    # task2()
-    # task3()
+def dunkel():
+    a = 1
+    b = 2
+
+    mu = 1
+    lamda = 1
+
     real_to_observed = {0: 0,
                         1: 1,
                         2: 2,
                         3: 2
                         }
 
-    w = np.array([[-11, 2, 0, 1],
-                  [3, -52.2, 2, 35],
-                  [0, 50, -77, 0.7],
-                  [8, 0.2, 75, -36.7]], dtype=np.float)
+    w = np.array([[-a - b, 0, b, a],
+                  [0, -a - b, b, a],
+                  [a, a, -2 * b, 0],
+                  [b, b, 0, -2 * a]], dtype=np.float)
+
+    w[:, 2] = w[:, 2]*mu
+    w[:, 3] = w[:, 3]*lamda
 
     model = Model(real_to_observed, w, 0.0001)
-    model.sample_trajectory(N=10**6)
+    model.sample_trajectory(N=10 ** 6)
+    # trj = model.trajectory
+    # w_est, p_est = trj.estimate_from_statistics()
+
+    return model
+
+
+if __name__ == '__main__':
+    # task1()
+    # task2()
+    # task3()
+
+    # w = np.array([[-11, 2, 0, 1],
+    #               [3, -52.2, 2, 35],
+    #               [0, 50, -77, 0.7],
+    #               [8, 0.2, 75, -36.7]], dtype=np.float)
+
+    model = dunkel()
     trj = model.trajectory
     w_est, p_est = trj.estimate_from_statistics()
-    model2 = Model(real_to_observed={i:i for i in range(3)}, w=w_est)
+    n_IJK = trj._get_n_IJK(0, 2, 1)
+    n_KJI = trj._get_n_IJK(1, 2, 0)
     pass
