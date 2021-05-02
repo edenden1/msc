@@ -77,7 +77,7 @@ class Model:
         return self._steady_state_stalling
 
     @property
-    def infromed_partial_Sigma(self):
+    def informed_partial_Sigma(self):
         """
         The informed partial entropy production
 
@@ -508,7 +508,7 @@ class Trajectory(list):
         :param k: Third observed state
         :return:
         """
-        return self._jump_counter[j, i] * self._get_p_ij_to_jk(i, j, k)
+        return self._jump_counter[j, i]/np.sum(self._jump_counter) * self._get_p_ij_to_jk(i, j, k)
 
     def _get_p_ij_to_jk(self, i, j, k):
         """
@@ -553,6 +553,7 @@ class Trajectory(list):
         # print('in sigma affinity')
         # print(self._time_matrix)
         ret = 0
+        mean_T = self.total_time/np.sum(self._jump_counter)
         for i in range(self.n_observed):
             for j in range(self.n_observed):
                 for k in range(self.n_observed):
@@ -560,20 +561,33 @@ class Trajectory(list):
                     p_ij_to_jk = self._get_p_ij_to_jk(i, j, k)
                     p_kj_to_ji = self._get_p_ij_to_jk(k, j, i)
                     tmp = np.log(p_ij_to_jk / p_kj_to_ji if p_ij_to_jk != 0 and p_kj_to_ji != 0 else 1)
-                    ret += self._get_p_ijk(i, j, k) * tmp / self.total_time
+                    ret += self._get_p_ijk(i, j, k) * tmp / mean_T
         return ret
 
     @property
     def Sigma_WTD(self):
         ret = 0
+        mean_T = self.total_time/np.sum(self._jump_counter)
         for i in range(self.n_observed):
             for j in range(self.n_observed):
                 if i != j and len(self._observed_to_real[j]) > 1:
                     for k in range(self.n_observed):
                         if j != k and i != k:
                             print(i, ', ', j, ', ', k)
-                            ret += self._get_p_ijk(i, j, k) * self._get_D(i, j, k, k, j, i) / self.total_time
+                            ret += self._get_p_ijk(i, j, k) * self._get_D(i, j, k, k, j, i) / mean_T
         return ret
+
+    def _get_n_IJK(self, i, j, k):
+        """
+
+        :param i: first state
+        :param j: second state
+        :param k: third state
+        :return:
+        """
+        w_est, p_est = self.estimate_from_statistics()
+        n_est = w_est.T*p_est
+        return n_est[i, j]*self._get_p_ij_to_jk(i, j, k)
 
 
 class State:
