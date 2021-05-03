@@ -1,8 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
-import kalepy as kale
-
+# import kalepy as kale
 
 class Model:
     _w = None  # The rate matrix. (n, n) numpy array.

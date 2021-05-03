@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from project import Model
 import os
 import pickle
+from scipy.optimize import minimize
 
 
 def plot_Sigma2(w):
@@ -172,11 +173,8 @@ def get_model(real_to_observed, w, x, N):
 
 
 def dunkel():
-    a = 1
-    b = 2
-
-    mu = 1
-    lamda = 1
+    a = 6.0/5.0
+    b = 6.0
 
     real_to_observed = {0: 0,
                         1: 1,
@@ -189,8 +187,6 @@ def dunkel():
                   [a, a, -2 * b, 0],
                   [b, b, 0, -2 * a]], dtype=np.float)
 
-    w[:, 2] = w[:, 2]*mu
-    w[:, 3] = w[:, 3]*lamda
 
     model = Model(real_to_observed, w, 0.0001)
     model.sample_trajectory(N=10 ** 6)
@@ -198,6 +194,20 @@ def dunkel():
     # w_est, p_est = trj.estimate_from_statistics()
 
     return model
+
+
+def entropy_production(n):
+    """
+
+    :param n: n_jI, n_Ij, n_jJ, n_Kj
+    :return:
+    """
+    m = 4
+    n_jI = np.array(n[:m])#.reshape(1, m)
+    n_Ij = np.array(n[m:2*m])#.reshape(1, m)
+    n_jK = np.array(n[2*m:3*m])#.reshape(1, m)
+    n_Kj = np.array(n[3*m:])#.reshape(1, m)
+    return np.sum((n_jI-n_Ij)*np.log(n_jI/n_Ij) + (n_jK-n_Kj)*np.log(n_jK/n_Kj))
 
 
 if __name__ == '__main__':
@@ -213,6 +223,20 @@ if __name__ == '__main__':
     model = dunkel()
     trj = model.trajectory
     w_est, p_est = trj.estimate_from_statistics()
+    n_est = w_est.T*p_est
+    w, p = model.w, model.steady_state
+    n = w.T*p
     n_IJK = trj._get_n_IJK(0, 2, 1)
     n_KJI = trj._get_n_IJK(1, 2, 0)
+    n_0 = np.zeros((1, 16))
+    cons = [{'type': 'eq', 'fun': lambda x: np.sum(x[4:8]*x[8:12]/(x[:4]+x[4:8]))-n_IJK},
+            {'type': 'eq', 'fun': lambda x: np.sum(x[:4]*x[12:]/(x[8:12]+x[12:]))-n_KJI},
+            {'type': 'ineq', 'fun': lambda x: n_est[2, 0] - np.sum(x[:4])},
+            {'type': 'ineq', 'fun': lambda x: n_est[0, 2] - np.sum(x[4:8])},
+            {'type': 'ineq', 'fun': lambda x: n_est[2, 1] - np.sum(x[8:12])},
+            {'type': 'ineq', 'fun': lambda x: n_est[1, 2] - np.sum(x[12:])}
+            ]  # + [{'type': 'eq', 'fun': lambda x: x[i]+x[4+i]-x[8+i]-x[12+i]} for i in range(4)]
+    bnds = tuple([(0.0001, None)]*16)
+    res = minimize(entropy_production, n_0, method='SLSQP', bounds=bnds, constraints=cons)
+    ep = entropy_production(res.x)
     pass
