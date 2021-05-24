@@ -1,8 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
-import kalepy as kale
-
+# import kalepy as kale
 
 class Model:
     _w = None  # The rate matrix. (n, n) numpy array.
@@ -389,7 +388,7 @@ class Trajectory(list):
 
         self._time_matrix = np.frompyfunc(list, 0, 1)(np.empty((self.n_observed,)*3, dtype=object))
         self._kde_matrix = np.empty((self.n_observed,) * 3, dtype=object)
-        self._p_ij_to_jk_matrix = -np.ones((self.n_observed,)*3, dtype=np.float)
+        self._p_ij_to_jk_matrix = -np.ones((self.n_observed,)*3, dtype=float)
 
         self._total_time_list = np.zeros((self.n_observed, 1))
         self._counter_list = np.zeros((self.n_observed, 1))
