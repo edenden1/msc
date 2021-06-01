@@ -21,8 +21,8 @@ def plot_Sigma2(w):
     for x in x_list:
         w_tmp = w.copy()
         np.fill_diagonal(w_tmp, 0)
-        w_tmp[0, 1] = w[0, 1]*np.exp(x)
-        w_tmp[1, 0] = w[1, 0]*np.exp(-x)
+        w_tmp[0, 1] = w[0, 1] * np.exp(x)
+        w_tmp[1, 0] = w[1, 0] * np.exp(-x)
         np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
         model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
         pps_list.append(model_tmp.passive_partial_Sigma)
@@ -51,12 +51,12 @@ def plot_Sigma3(real_to_observed, w):
     Sigma_list = []
     Sigma_KLD_list = []
     x_list = np.sort([x for x in range(-3, 5)] + [-0.67])
-    N = 10**7
+    N = 10 ** 6
     for x in x_list:
         w_tmp = w.copy()
         np.fill_diagonal(w_tmp, 0)
-        w_tmp[0, 1] = w[0, 1]*np.exp(x)
-        w_tmp[1, 0] = w[1, 0]*np.exp(-x)
+        w_tmp[0, 1] = w[0, 1] * np.exp(x)
+        w_tmp[1, 0] = w[1, 0] * np.exp(-x)
         np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
         model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
         model_tmp.sample_trajectory(N)
@@ -66,8 +66,46 @@ def plot_Sigma3(real_to_observed, w):
         Sigma_list.append(model_tmp.steady_state_Sigma)
         Sigma_aff_tmp = model_tmp.get_Sigma_aff()
         Sigma_WTD_tmp = model_tmp.get_Sigma_WTD()
-        Sigma_KLD_list.append(Sigma_aff_tmp+Sigma_WTD_tmp)
-        print(x, ' - ', 'Sigma:', Sigma_list[-1], 'KLD: ', Sigma_KLD_list[-1], 'WTD: ', Sigma_WTD_tmp, 'affinity: ', Sigma_aff_tmp, 'informed: ', ips_list[-1])
+        Sigma_KLD_list.append(Sigma_aff_tmp + Sigma_WTD_tmp)
+        print(x, ' - ', 'Sigma:', Sigma_list[-1], 'KLD: ', Sigma_KLD_list[-1], 'WTD: ', Sigma_WTD_tmp, 'affinity: ',
+              Sigma_aff_tmp, 'informed: ', ips_list[-1])
+
+    plt.plot(x_list, pps_list, label='Passive')
+    plt.plot(x_list, ips_list, label='Informed')
+    plt.plot(x_list, Sigma_list, label='Total')
+    plt.plot(x_list, Sigma_KLD_list, label='KLD')
+    plt.legend()
+    plt.xlabel('x')
+    plt.yscale('log')
+    plt.show()
+
+
+def plot_dunkel(real_to_observed, w):
+    pps_list = []
+    ips_list = []
+    Sigma_list = []
+    Sigma_KLD_list = []
+    Sigma2_list = []
+    x_list = np.sort([x for x in range(-3, 5)] + [-0.67])
+    N = 10 ** 6
+    for x in x_list:
+        w_tmp = w.copy()
+        np.fill_diagonal(w_tmp, 0)
+        w_tmp[0, 1] = w[0, 1] * np.exp(x)
+        w_tmp[1, 0] = w[1, 0] * np.exp(-x)
+        np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
+        model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
+        model_tmp.sample_trajectory(N)
+        # model_tmp = get_model(real_to_observed, w, x, N)
+        pps_list.append(model_tmp.passive_partial_Sigma)
+        ips_list.append(model_tmp.informed_partial_Sigma)
+        Sigma_list.append(model_tmp.steady_state_Sigma)
+        Sigma_aff_tmp = model_tmp.get_Sigma_aff()
+        Sigma_WTD_tmp = model_tmp.get_Sigma_WTD()
+        Sigma_KLD_list.append(Sigma_aff_tmp + Sigma_WTD_tmp)
+        Sigma2_list.append()
+        print(x, ' - ', 'Sigma: ', Sigma_list[-1], 'KLD: ', Sigma_KLD_list[-1], 'WTD: ', Sigma_WTD_tmp, 'affinity: ',
+              Sigma_aff_tmp, 'informed: ', ips_list[-1], 'Sigma2: ', Sigma2_list[-1])
 
     plt.plot(x_list, pps_list, label='Passive')
     plt.plot(x_list, ips_list, label='Informed')
@@ -145,6 +183,10 @@ def task3():
     plot_Sigma3(real_to_observed, w)
 
 
+def task4():
+    pass
+
+
 def get_model(real_to_observed, w, x, N):
     """
     Sample a trajectory and save the model with force x if does not exist.
@@ -172,6 +214,57 @@ def get_model(real_to_observed, w, x, N):
     return model
 
 
+def get_Sigma2(trj):
+    observed_states = trj.observed_states
+    n_observed = trj.n_observed
+    w_est, p_est = trj.estimate_from_statistics()
+    n_est = w_est.T * p_est
+    cutoff = 0
+    ep = 0
+    for j in range(n_observed):
+        J = observed_states[j]
+        other_states = observed_states[:j]
+        if j < n_observed - 1:
+            other_states += observed_states[j + 1:]
+        for i in range(n_observed - 1):
+            I = other_states[i]
+            for k in range(i+1, n_observed - 1):
+                K = other_states[k]
+                n_IJK = trj._get_n_IJK(I, J, K)
+                n_KJI = trj._get_n_IJK(K, J, I)
+                n_00 = np.array(4 * [n_est[2, 0]] + 4 * [n_est[0, 2]] + 4 * [n_est[2, 1]])
+                n_0 = n_00 * np.random.rand(12)
+                cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[4:8] * x[8:], x[:4] + x[8:], out=np.zeros((1,4)), where=((x[:4]+x[8:])>cutoff))) - n_IJK},
+                        {'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[:4] * (x[:4] + x[4:8] - x[8:]), x[:4] + x[8:], out=np.zeros((1,4)), where=((x[:4]+x[8:])>cutoff))) - n_KJI},
+                        {'type': 'ineq', 'fun': lambda x: n_est[2, 0] - np.sum(x[:4])},
+                        {'type': 'ineq', 'fun': lambda x: n_est[0, 2] - np.sum(x[4:8])},
+                        {'type': 'ineq', 'fun': lambda x: n_est[2, 1] - np.sum(x[8:])},
+                        {'type': 'ineq', 'fun': lambda x: n_est[1, 2] - np.sum(x[:4] + x[4:8] - x[8:])},
+                        {'type': 'ineq', 'fun': lambda x: np.min(x[:4] + x[4:8] - x[8:])}
+                        ]
+                bnds = tuple([(cutoff, None)] * 12)
+                res = minimize(entropy_production(cutoff), n_0, method='SLSQP', options={'maxiter': 1e5},
+                               bounds=bnds,
+                               constraints=cons)
+                counter = 0
+                max_count = 1000
+                while res.status != 0 and counter < max_count:
+                    n_0 = n_00 * np.random.rand(12)
+                    res = minimize(entropy_production(cutoff), n_0, method='SLSQP',
+                                   options={'maxiter': 1e5}, bounds=bnds,
+                                   constraints=cons)
+                    counter += 1
+                if counter != max_count:
+                    print(counter)
+                    print(I, J, K)
+                    test = res.x.reshape(1, -1)
+                    # test = np.append(test, res.x[:4] + res.x[4:8] - res.x[8:])
+                    test[test < cutoff * 1.1] = 0
+                    test = test.reshape(res.x.shape)
+                    ep += entropy_production_with_cutoff(test, cutoff)
+    return ep / 2.0
+
+
 def dunkel():
     real_to_observed = {0: 0,
                         1: 1,
@@ -184,66 +277,48 @@ def dunkel():
                   [0, 50, -77, 0.7],
                   [8, 0.2, 75, -36.7]], dtype=float)
 
-    x_list = np.sort([x for x in range(-3, 5)] + [-0.67])
-    ep_list = []
+    x = -3
 
-    for x in x_list:
-        w_tmp = w.copy()
-        np.fill_diagonal(w_tmp, 0)
-        w_tmp[0, 1] = w[0, 1] * np.exp(x)
-        w_tmp[1, 0] = w[1, 0] * np.exp(-x)
-        np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
+    w_tmp = w.copy()
+    np.fill_diagonal(w_tmp, 0)
+    w_tmp[0, 1] = w[0, 1] * np.exp(x)
+    w_tmp[1, 0] = w[1, 0] * np.exp(-x)
+    np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
 
-        model = Model(real_to_observed, w_tmp, 0.0001)
-        model.sample_trajectory(N=10 ** 6)
+    model = Model(real_to_observed, w_tmp, 0.0001)
+    print(model.w.T * model.steady_state)
+    print(model.steady_state)
+    model.sample_trajectory(N=10 ** 6)
+    # trj = model.trajectory
+    # w_est, p_est = trj.estimate_from_statistics()
 
-        trj = model.trajectory
-        w_est, p_est = trj.estimate_from_statistics()
-        n_est = w_est.T * p_est
-        # w, p = model.w, model.steady_state
-        # n = w.T * p
-        n_IJK = trj._get_n_IJK(0, 2, 1)
-        n_KJI = trj._get_n_IJK(1, 2, 0)
-        n_00 = np.mean([n_est[2, 0], n_est[0, 2], n_est[2, 1]])
-        print(n_est)
-        n_0 = [n_00]*12
-        cons = [{'type': 'eq', 'fun': lambda x: np.sum(x[4:8] * x[8:] / (x[:4] + x[8:])) - n_IJK},
-                {'type': 'eq', 'fun': lambda x: np.sum(x[:4] * (x[:4] + x[4:8] - x[8:]) / (x[:4] + x[8:])) - n_KJI},
-                {'type': 'ineq', 'fun': lambda x: n_est[2, 0] - np.sum(x[:4])},
-                {'type': 'ineq', 'fun': lambda x: n_est[0, 2] - np.sum(x[4:8])},
-                {'type': 'ineq', 'fun': lambda x: n_est[2, 1] - np.sum(x[8:])},
-                {'type': 'ineq', 'fun': lambda x: n_est[1, 2] - np.sum(x[:4] + x[4:8] - x[8:])}
-                ] + [{'type': 'ineq', 'fun': lambda x: x[i]+x[4+i]-x[8+i]} for i in range(4)]
-        bnds = tuple([(1e-6, None)] * 12)
-        import pdb
-        pdb.set_trace()
-        res = minimize(entropy_production, n_0, method='SLSQP', options={'disp': True, 'maxiter': 1e5}, bounds=bnds,
-                       constraints=cons)
-        ep_list.append(entropy_production(res.x))
-
-    return x_list, ep_list
+    return model
 
 
-def entropy_production(n):
+def entropy_production(cutoff=0.):
+    return lambda x: entropy_production_with_cutoff(x, cutoff)
+
+
+def entropy_production_with_cutoff(n, cutoff):
     """
 
     :param n: n_jI, n_Ij, n_jJ, n_Kj
     :return:
     """
     m = 4
-    n_jI = np.array(n[:m])#.reshape(1, m)
-    n_Ij = np.array(n[m:2*m])#.reshape(1, m)
-    n_jK = np.array(n[2*m:3*m])#.reshape(1, m)
-    #n_Kj = np.array(n[3*m:])#.reshape(1, m)
-    n_Kj = n_jI+n_Ij-n_jK
+    n_jI = np.array(n[:m])  # .reshape(1, m)
+    n_Ij = np.array(n[m:2 * m])  # .reshape(1, m)
+    n_jK = np.array(n[2 * m:3 * m])  # .reshape(1, m)
+    # n_Kj = np.array(n[3*m:])#.reshape(1, m)
+    n_Kj = n_jI + n_Ij - n_jK
     # print(n_jI)
     # print(n_Ij)
     # print(n_jK)
     # print(n_Kj)
     res = 0
     for i in range(m):
-        if n_Kj[i] > 1e-6+1e-10:
-            res += (n_jI[i]-n_Ij[i])*np.log(n_jI[i]/n_Ij[i]) + (n_jK[i]-n_Kj[i])*np.log(n_jK[i]/n_Kj[i])
+        if n_Kj[i] > cutoff and n_jK[i] > cutoff and n_Ij[i] > cutoff and n_jI[i] > cutoff:
+            res += (n_jI[i] - n_Ij[i]) * np.log(n_jI[i] / n_Ij[i]) + (n_jK[i] - n_Kj[i]) * np.log(n_jK[i] / n_Kj[i])
     # return np.sum((n_jI-n_Ij)*np.log(n_jI/n_Ij) + (n_jK-n_Kj)*np.log(n_jK/n_Kj))
     return res
 
@@ -251,7 +326,8 @@ def entropy_production(n):
 def ep2(x):
     a = x[0]
     b = x[1]
-    return 4*(a-b)*np.log(a/b) if a!=0 and b!=0 else 0
+    cutoff = 1e-8
+    return 4 * (a - b) * np.log(a / b) if a > 0 and b > 0 else 0
 
 
 def dunkel_exmple():
@@ -260,12 +336,10 @@ def dunkel_exmple():
     cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.square(x)) / (np.sum(x)) - p},
             {'type': 'ineq', 'fun': lambda x: 1 - np.sum(x)}
             ]
-    bnds = tuple([(1e-6, None)] * 2)
+    bnds = tuple([(1e-4, None)] * 2)
     for p in p_list:
-        print(p)
-        x_0 = [0.1999, 0.2001]
+        x_0 = 0.01 * np.random.rand(2) + 0.1
         res = minimize(ep2, x_0, method='SLSQP', options={'disp': True}, bounds=bnds, constraints=cons)
-        print(res.x)
         ep_list.append(ep2(res.x))
     plt.plot(p_list, ep_list)
     plt.show()
@@ -281,28 +355,31 @@ if __name__ == '__main__':
     #               [0, 50, -77, 0.7],
     #               [8, 0.2, 75, -36.7]], dtype=float)
 
-    # model = dunkel()
-    # trj = model.trajectory
+    model = dunkel()
+    trj = model.trajectory
+    ep = get_Sigma2(trj)
     # w_est, p_est = trj.estimate_from_statistics()
-    # n_est = w_est.T*p_est
+    # n_est = w_est.T * p_est
     # w, p = model.w, model.steady_state
-    # n = w.T*p
+    # n = w.T * p
     # n_IJK = trj._get_n_IJK(0, 2, 1)
     # n_KJI = trj._get_n_IJK(1, 2, 0)
-    # n_00 = np.array(4*[n_est[2, 0]] + 4*[n_est[0, 2]] + 4*[n_est[2, 1]])
-    # n_0 = n_00/4.0
-    # cons = [{'type': 'eq', 'fun': lambda x: np.sum(x[4:8]*x[8:]/(x[:4]+x[8:]))-n_IJK},
-    #         {'type': 'eq', 'fun': lambda x: np.sum(x[:4]*(x[:4]+x[4:8]-x[8:])/(x[:4]+x[8:]))-n_KJI},
+    # n_00 = np.array(4 * [n_est[2, 0]] + 4 * [n_est[0, 2]] + 4 * [n_est[2, 1]])
+    # n_0 = n_00 / 4.0
+    # cons = [{'type': 'eq', 'fun': lambda x: np.sum(x[4:8] * x[8:] / (x[:4] + x[8:])) - n_IJK},
+    #         {'type': 'eq', 'fun': lambda x: np.sum(x[:4] * (x[:4] + x[4:8] - x[8:]) / (x[:4] + x[8:])) - n_KJI},
     #         {'type': 'ineq', 'fun': lambda x: n_est[2, 0] - np.sum(x[:4])},
     #         {'type': 'ineq', 'fun': lambda x: n_est[0, 2] - np.sum(x[4:8])},
     #         {'type': 'ineq', 'fun': lambda x: n_est[2, 1] - np.sum(x[8:])},
-    #         {'type': 'ineq', 'fun': lambda x: n_est[1, 2] - np.sum(x[:4]+x[4:8]-x[8:])}
-    #         ] #+ [{'type': 'ineq', 'fun': lambda x: x[i]+x[4+i]-x[8+i]} for i in range(4)]
-    # bnds = tuple([(1e-6, None)]*12)
-    # res = minimize(entropy_production, n_0, method='SLSQP', options={'disp': True, 'maxiter': 1e5}, bounds=bnds, constraints=cons)
+    #         {'type': 'ineq', 'fun': lambda x: n_est[1, 2] - np.sum(x[:4] + x[4:8] - x[8:])},
+    #         {'type': 'ineq', 'fun': lambda x: np.min(x[:4] + x[4:8] - x[8:])}
+    #         ]
+    # cutoff = 1e-4
+    # bnds = tuple([(cutoff, None)] * 12)
+    # res = minimize(entropy_production(cutoff), n_0, method='SLSQP', options={'disp': True, 'maxiter': 1e5}, bounds=bnds,
+    #                constraints=cons)
+    # test = res.x
+    # test = np.append(test, res.x[:4] + res.x[4:8] - res.x[8:]).reshape(1, -1)
+    # test[test < cutoff * 1.1] = 0
     # ep = entropy_production(res.x)
-
-    x_list, ep_list = dunkel()
-
-    # dunkel_exmple()
     pass

@@ -326,7 +326,7 @@ class Trajectory(list):
         return self._real_to_observed
 
     @property
-    def obserbed_states(self):
+    def observed_states(self):
         return list(set(self.real_to_observed.values()))
 
     @property
@@ -336,7 +336,7 @@ class Trajectory(list):
 
         :return:
         """
-        return len(self.obserbed_states)
+        return len(self.observed_states)
 
     @property
     def steady_state(self):
