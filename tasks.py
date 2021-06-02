@@ -231,7 +231,7 @@ def get_Sigma2(trj):
     n_observed = trj.n_observed
     w_est, p_est = trj.estimate_from_statistics()
     n_est = w_est.T * p_est
-    cutoff = 0
+    cutoff = 1e-10
     ep = 0
     for j in range(n_observed):
         J = observed_states[j]
@@ -242,33 +242,39 @@ def get_Sigma2(trj):
             I = other_states[i]
             for k in range(i+1, n_observed - 1):
                 K = other_states[k]
-                n_IJK = trj._get_n_IJK(I, J, K)
-                n_KJI = trj._get_n_IJK(K, J, I)
-                # n_00 = np.array(4 * [n_est[2, 0]] + 4 * [n_est[0, 2]] + 4 * [n_est[2, 1]])
-                n_0 = np.random.rand(12)# n_00 * np.random.rand(12)
-                cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[4:8] * x[8:], x[:4] + x[8:], out=np.zeros((1,4)), where=((x[:4]+x[8:])>2*cutoff))) - n_IJK},
-                        {'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[:4] * (x[:4] + x[4:8] - x[8:]), x[:4] + x[8:], out=np.zeros((1,4)), where=((x[:4]+x[8:])>2*cutoff))) - n_KJI},
-                        {'type': 'ineq', 'fun': lambda x: n_est[2, 0] - np.sum(x[:4])},
-                        {'type': 'ineq', 'fun': lambda x: n_est[0, 2] - np.sum(x[4:8])},
-                        {'type': 'ineq', 'fun': lambda x: n_est[2, 1] - np.sum(x[8:])},
-                        {'type': 'ineq', 'fun': lambda x: n_est[1, 2] - np.sum(x[:4] + x[4:8] - x[8:])},
+                n_IJK = np.max([trj._get_n_IJK(I, J, K), cutoff])
+                n_KJI = np.max([trj._get_n_IJK(K, J, I), cutoff])
+                n_JI = np.max([n_est[J, I], cutoff])
+                n_IJ = np.max([n_est[I, J], cutoff])
+                n_JK = np.max([n_est[J, K], cutoff])
+                n_KJ = np.max([n_est[K, J], cutoff])
+                n_0 = np.array(4 * [n_JI] + 4 * [n_IJ] + 4 * [n_JK])/4.0
+                # n_0 = np.random.rand(12)# n_00 * np.random.rand(12)
+                cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[4:8] * x[8:], x[:4] + x[8:], out=np.zeros(4), where=(x[:4]+x[8:]>2*cutoff))) - n_IJK},
+                        {'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[:4] * (x[:4] + x[4:8] - x[8:]), x[:4] + x[8:], out=np.zeros(4), where=(x[:4]+x[8:]>2*cutoff))) - n_KJI},
+                        {'type': 'ineq', 'fun': lambda x: n_JI - np.sum(x[:4])},
+                        {'type': 'ineq', 'fun': lambda x: n_IJ - np.sum(x[4:8])},
+                        {'type': 'ineq', 'fun': lambda x: n_JK - np.sum(x[8:])},
+                        {'type': 'ineq', 'fun': lambda x: n_KJ - np.sum(x[:4] + x[4:8] - x[8:])},
                         {'type': 'ineq', 'fun': lambda x: np.min(x[:4] + x[4:8] - x[8:])}
                         ]
-                bnds = tuple([(cutoff, None)] * 12)
-                res = minimize(entropy_production(cutoff), n_0, method='SLSQP', options={'maxiter': 1e5},
+                bnds = 4 * [(0, n_JI)] + 4 * [(0, n_IJ)] + 4 * [(0, n_JK)]
+                tol = 1e-6
+                res = minimize(entropy_production(cutoff), n_0, method='SLSQP', options={'maxiter': 1e4},
                                bounds=bnds,
-                               constraints=cons)
-                counter = 0
-                max_count = 1000
-                while res.status != 0 and counter < max_count:
-                    n_0 = np.random.rand(12)  # n_00 * np.random.rand(12)
+                               constraints=cons, tol=tol)
+
+                while res.status != 0 and tol < 1e-4:
+                    tol *= 4
+                    # n_0 = np.random.rand(12)  # n_00 * np.random.rand(12)
                     res = minimize(entropy_production(cutoff), n_0, method='SLSQP',
-                                   options={'maxiter': 1e5}, bounds=bnds,
-                                   constraints=cons)
-                    counter += 1
-                if counter != max_count:
-                    print(counter)
+                                   options={'maxiter': 1e4}, bounds=bnds,
+                                   constraints=cons, tol=tol)
+
+                if res.status != 0:
+                    # print(counter)
                     print(I, J, K)
+                    print(tol)
                     test = res.x.reshape(1, -1)
                     # test = np.append(test, res.x[:4] + res.x[4:8] - res.x[8:])
                     test[test < cutoff * 1.1] = 0
@@ -327,11 +333,12 @@ def entropy_production_with_cutoff(n, cutoff):
     # print(n_Ij)
     # print(n_jK)
     # print(n_Kj)
-    res = 0
-    for i in range(m):
-        if n_Kj[i] > cutoff and n_jK[i] > cutoff and n_Ij[i] > cutoff and n_jI[i] > cutoff:
-            res += (n_jI[i] - n_Ij[i]) * np.log(n_jI[i] / n_Ij[i]) + (n_jK[i] - n_Kj[i]) * np.log(n_jK[i] / n_Kj[i])
-    # return np.sum((n_jI-n_Ij)*np.log(n_jI/n_Ij) + (n_jK-n_Kj)*np.log(n_jK/n_Kj))
+    # res = 0
+    # for i in range(m):
+    #     if n_Kj[i] > cutoff and n_jK[i] > cutoff and n_Ij[i] > cutoff and n_jI[i] > cutoff:
+    #         res += (n_jI[i] - n_Ij[i]) * np.log(n_jI[i] / n_Ij[i]) + (n_jK[i] - n_Kj[i]) * np.log(n_jK[i] / n_Kj[i])
+
+    res = np.sum((n_jI-n_Ij)*np.real(np.log((n_jI+cutoff)/(n_Ij+cutoff))) + (n_jK-n_Kj)*np.real(np.log((n_jK+cutoff)/(n_Kj+cutoff))))
     return res
 
 
@@ -358,11 +365,12 @@ def dunkel_exmple():
 
 
 def main():
-    w = np.array([[-11, 2, 0, 1],
-                  [3, -52.2, 2, 35],
-                  [0, 50, -77, 0.7],
-                  [8, 0.2, 75, -36.7]], dtype=float)
-
+    # w = np.array([[-11, 2, 0, 1],
+    #               [3, -52.2, 2, 35],
+    #               [0, 50, -77, 0.7],
+    #               [8, 0.2, 75, -36.7]], dtype=float)
+    model = dunkel()
+    trj = model.trajectory
     w_est, p_est = trj.estimate_from_statistics()
     n_est = w_est.T * p_est
     w, p = model.w, model.steady_state
