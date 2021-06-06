@@ -4,6 +4,7 @@ from project import Model
 import os
 import pickle
 from scipy.optimize import minimize
+import json
 
 
 def plot_Sigma2(w):
@@ -87,8 +88,9 @@ def plot_dunkel(real_to_observed, w):
     Sigma_KLD_list = []
     Sigma2_list = []
     x_list = np.sort([x for x in range(-3, 5)] + [-0.67])
-    N = 10 ** 6
+    N = 10 ** 7
     for x in x_list:
+        print(x)
         w_tmp = w.copy()
         np.fill_diagonal(w_tmp, 0)
         w_tmp[0, 1] = w[0, 1] * np.exp(x)
@@ -97,25 +99,28 @@ def plot_dunkel(real_to_observed, w):
         model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
         model_tmp.sample_trajectory(N)
         # model_tmp = get_model(real_to_observed, w, x, N)
-        pps_list.append(model_tmp.passive_partial_Sigma)
-        ips_list.append(model_tmp.informed_partial_Sigma)
-        Sigma_list.append(model_tmp.steady_state_Sigma)
-        Sigma_aff_tmp = model_tmp.get_Sigma_aff()
-        Sigma_WTD_tmp = model_tmp.get_Sigma_WTD()
-        Sigma_KLD_list.append(Sigma_aff_tmp + Sigma_WTD_tmp)
-        Sigma2_list.append(get_Sigma2(model_tmp.trajectory))
-        print(x, ' - ', 'Sigma: ', Sigma_list[-1], 'KLD: ', Sigma_KLD_list[-1], 'WTD: ', Sigma_WTD_tmp, 'affinity: ',
-              Sigma_aff_tmp, 'informed: ', ips_list[-1], 'Sigma2: ', Sigma2_list[-1])
+        # pps_list.append(model_tmp.passive_partial_Sigma)
+        # ips_list.append(model_tmp.informed_partial_Sigma)
+        # Sigma_list.append(model_tmp.steady_state_Sigma)
+        # Sigma_aff_tmp = model_tmp.get_Sigma_aff()
+        # Sigma_WTD_tmp = model_tmp.get_Sigma_WTD()
+        # Sigma_KLD_list.append(Sigma_aff_tmp + Sigma_WTD_tmp)
+        ep, ijk_dict = get_Sigma2(model_tmp.trajectory)
+        with open(f'stats_{x}.json', 'w') as jsonFile:
+            json.dump(ijk_dict, jsonFile)
+        Sigma2_list.append(ep)
+        # print(x, ' - ', 'Sigma: ', Sigma_list[-1], 'KLD: ', Sigma_KLD_list[-1], 'WTD: ', Sigma_WTD_tmp, 'affinity: ',
+        #       Sigma_aff_tmp, 'informed: ', ips_list[-1], 'Sigma2: ', Sigma2_list[-1])
 
-    plt.plot(x_list, pps_list, label='Passive')
-    plt.plot(x_list, ips_list, label='Informed')
-    plt.plot(x_list, Sigma_list, label='Total')
-    plt.plot(x_list, Sigma_KLD_list, label='KLD')
-    plt.plot(x_list, Sigma2_list, label='Sigma2')
-    plt.legend()
-    plt.xlabel('x')
-    plt.yscale('log')
-    plt.show()
+    # plt.plot(x_list, pps_list, label='Passive')
+    # plt.plot(x_list, ips_list, label='Informed')
+    # plt.plot(x_list, Sigma_list, label='Total')
+    # plt.plot(x_list, Sigma_KLD_list, label='KLD')
+    # plt.plot(x_list, Sigma2_list, label='Sigma2')
+    # plt.legend()
+    # plt.xlabel('x')
+    # plt.yscale('log')
+    # plt.show()
 
 
 def task1():
@@ -233,6 +238,7 @@ def get_Sigma2(trj):
     n_est = w_est.T * p_est
     cutoff = 1e-10
     ep = 0
+    ijk_dict = {}
     for j in range(n_observed):
         J = observed_states[j]
         other_states = observed_states[:j]
@@ -247,40 +253,48 @@ def get_Sigma2(trj):
                 n_JI = np.max([n_est[J, I], cutoff])
                 n_IJ = np.max([n_est[I, J], cutoff])
                 n_JK = np.max([n_est[J, K], cutoff])
-                n_KJ = np.max([n_est[K, J], cutoff])
-                n_0 = np.array(4 * [n_JI] + 4 * [n_IJ] + 4 * [n_JK])/4.0
-                # n_0 = np.random.rand(12)# n_00 * np.random.rand(12)
-                cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[4:8] * x[8:], x[:4] + x[8:], out=np.zeros(4), where=(x[:4]+x[8:]>2*cutoff))) - n_IJK},
-                        {'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[:4] * (x[:4] + x[4:8] - x[8:]), x[:4] + x[8:], out=np.zeros(4), where=(x[:4]+x[8:]>2*cutoff))) - n_KJI},
-                        {'type': 'ineq', 'fun': lambda x: n_JI - np.sum(x[:4])},
-                        {'type': 'ineq', 'fun': lambda x: n_IJ - np.sum(x[4:8])},
-                        {'type': 'ineq', 'fun': lambda x: n_JK - np.sum(x[8:])},
-                        {'type': 'ineq', 'fun': lambda x: n_KJ - np.sum(x[:4] + x[4:8] - x[8:])},
-                        {'type': 'ineq', 'fun': lambda x: np.min(x[:4] + x[4:8] - x[8:])}
-                        ]
-                bnds = 4 * [(0, n_JI)] + 4 * [(0, n_IJ)] + 4 * [(0, n_JK)]
-                tol = 1e-6
-                res = minimize(entropy_production(cutoff), n_0, method='SLSQP', options={'maxiter': 1e4},
-                               bounds=bnds,
-                               constraints=cons, tol=tol)
+                # n_KJ = np.max([n_est[K, J], cutoff])
+                ijk_dict[f'{i}{j}{k}'] = dict(n_JI=n_JI,
+                                              n_IJ=n_IJ,
+                                              n_JK=n_JK,
+                                              n_IJK=n_IJK,
+                                              n_KJI=n_KJI
+                                              )
+                ep += calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI)
+    # with open('stats.json', 'w') as jsonFile:
+    #     json.dump(ijk_dict, jsonFile)
+    return ep / 2.0, ijk_dict
 
-                while res.status != 0 and tol < 1e-4:
-                    tol *= 4
-                    # n_0 = np.random.rand(12)  # n_00 * np.random.rand(12)
-                    res = minimize(entropy_production(cutoff), n_0, method='SLSQP',
-                                   options={'maxiter': 1e4}, bounds=bnds,
-                                   constraints=cons, tol=tol)
 
-                if res.status != 0:
-                    # print(counter)
-                    print(I, J, K)
-                    print(tol)
-                    test = res.x.reshape(1, -1)
-                    # test = np.append(test, res.x[:4] + res.x[4:8] - res.x[8:])
-                    test[test < cutoff * 1.1] = 0
-                    test = test.reshape(res.x.shape)
-                    ep += entropy_production_with_cutoff(test, cutoff)
-    return ep / 2.0
+def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
+    _tol = 1e-10
+    n_0 = np.array(4 * [n_JI] + 4 * [n_IJ] + 4 * [n_JK]) / 4.0
+    # n_0 = np.random.rand(12)# n_00 * np.random.rand(12)
+
+    # cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[4:8] * x[8:], x[:4] + x[8:], out=np.zeros(4), where=(x[:4]+x[8:]>2*cutoff))) - n_IJK},
+    #         {'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[:4] * (x[:4] - x[4:8] + x[8:]), x[:4] + x[8:], out=np.zeros(4), where=(x[:4]+x[8:]>2*cutoff))) - n_KJI},
+    cons = [{'type': 'eq', 'fun': lambda x: np.sum(x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)) - n_IJK},
+            {'type': 'eq',
+             'fun': lambda x: np.sum(x[:4] * (x[:4] - x[4:8] + x[8:]) / (x[:4] + x[8:] + _tol)) - n_KJI},
+            {'type': 'ineq', 'fun': lambda x: n_JI - np.sum(x[:4])},
+            {'type': 'ineq', 'fun': lambda x: n_IJ - np.sum(x[4:8])},
+            {'type': 'ineq', 'fun': lambda x: n_JK - np.sum(x[8:])}
+            # {'type': 'ineq', 'fun': lambda x: n_KJ - np.sum(x[:4] - x[4:8] + x[8:])},
+            ] + [{'type': 'ineq', 'fun': lambda x: x[i] - x[4 + i] + x[8 + i]} for i in range(4)]
+    bnds = 4 * [(0, n_JI)] + 4 * [(0, n_IJ)] + 4 * [(0, n_JK)]
+    con_tol = 1e-6
+    res = minimize(entropy_production, n_0, method='SLSQP', options={'maxiter': 1e4},
+                   bounds=bnds,
+                   constraints=cons, tol=con_tol)
+
+    while res.status != 0:
+        con_tol *= 4
+        # n_0 = np.random.rand(12)  # n_00 * np.random.rand(12)
+        res = minimize(entropy_production, n_0, method='SLSQP',
+                       options={'maxiter': 1e4}, bounds=bnds,
+                       constraints=cons, tol=con_tol)
+
+    return entropy_production(res.x)
 
 
 def dunkel():
@@ -313,52 +327,55 @@ def dunkel():
     return model
 
 
-def entropy_production(cutoff=0.):
-    return lambda x: entropy_production_with_cutoff(x, cutoff)
-
-
-def entropy_production_with_cutoff(n, cutoff):
+def entropy_production(n):
     """
 
     :param n: n_jI, n_Ij, n_jJ, n_Kj
     :return:
     """
     m = 4
-    n_jI = np.array(n[:m])  # .reshape(1, m)
-    n_Ij = np.array(n[m:2 * m])  # .reshape(1, m)
-    n_jK = np.array(n[2 * m:3 * m])  # .reshape(1, m)
-    # n_Kj = np.array(n[3*m:])#.reshape(1, m)
-    n_Kj = n_jI + n_Ij - n_jK
-    # print(n_jI)
-    # print(n_Ij)
-    # print(n_jK)
-    # print(n_Kj)
+
+    n_jI = np.array(n[:m])
+    n_Ij = np.array(n[m:2 * m])
+    n_jK = np.array(n[2 * m:3 * m])
+    n_Kj = n_jI - n_Ij + n_jK
+
+
     # res = 0
     # for i in range(m):
-    #     if n_Kj[i] > cutoff and n_jK[i] > cutoff and n_Ij[i] > cutoff and n_jI[i] > cutoff:
-    #         res += (n_jI[i] - n_Ij[i]) * np.log(n_jI[i] / n_Ij[i]) + (n_jK[i] - n_Kj[i]) * np.log(n_jK[i] / n_Kj[i])
+    #     if n_Ij[i] > cutoff and n_jI[i] > cutoff:
+    #         res += (n_jI[i] - n_Ij[i]) * np.log(n_jI[i] / n_Ij[i])
+    #     if n_Kj[i] > cutoff and n_jK[i] > cutoff:
+    #         res += (n_jK[i] - n_Kj[i]) * np.log(n_jK[i] / n_Kj[i])
+    _tol = 1e-10
 
-    res = np.sum((n_jI-n_Ij)*np.real(np.log((n_jI+cutoff)/(n_Ij+cutoff))) + (n_jK-n_Kj)*np.real(np.log((n_jK+cutoff)/(n_Kj+cutoff))))
+    res = np.sum((n_jI-n_Ij)*np.real(np.log((n_jI+_tol)/(n_Ij+_tol))) + (n_jK-n_Kj)*np.real(np.log((n_jK+_tol)/(n_Kj+_tol))))
+
     return res
 
 
 def ep2(x):
     a = x[0]
     b = x[1]
-    cutoff = 1e-8
-    return 4 * (a - b) * np.log(a / b) if a > 0 and b > 0 else 0
+    _tol = 1e-10
+    return 4 * (a - b) * np.log((a+_tol) / (b+_tol))
 
 
 def dunkel_exmple():
     p_list = np.linspace(0, 0.99, 100)
     ep_list = []
-    cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.square(x)) / (np.sum(x)) - p},
+    _tol = 1e-10
+    cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.square(x)) / (np.sum(x)+_tol) - p},
             {'type': 'ineq', 'fun': lambda x: 1 - np.sum(x)}
             ]
-    bnds = tuple([(1e-4, None)] * 2)
+    bnds = tuple([(0, 1)] * 2)
+    x_0 = np.array([0.2, 0.4])
+    con_tol = 1e-10
     for p in p_list:
-        x_0 = 0.01 * np.random.rand(2) + 0.1
-        res = minimize(ep2, x_0, method='SLSQP', options={'disp': True}, bounds=bnds, constraints=cons)
+        res = minimize(ep2, x_0, method='SLSQP', options={'maxiter': 1e4}, bounds=bnds, constraints=cons, tol=con_tol)
+        while res.status != 0:
+            con_tol *= 4
+            res = minimize(ep2, x_0, method='SLSQP', options={'maxiter': 1e4}, bounds=bnds, constraints=cons, tol=con_tol)
         ep_list.append(ep2(res.x))
     plt.plot(p_list, ep_list)
     plt.show()
@@ -402,10 +419,6 @@ if __name__ == '__main__':
     # task1()
     # task2()
     # task3()
-
-    # model = dunkel()
-    # trj = model.trajectory
-    # ep = get_Sigma2(trj)
 
     task4()
 
