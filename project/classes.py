@@ -196,12 +196,12 @@ class Model:
             self.trajectory.jump_state()
             if self.n == self.n_observed:
                 if i == 10**j:
-                    print(i)
+                    # print(i)
                     w, steady_state = self.trajectory.estimate_from_statistics()
                     rates_convergence.append(np.linalg.norm(w-self.w))
                     steady_state_convergence.append(np.linalg.norm(steady_state-self.steady_state))
                     j += 1
-            print(i)
+            # print(i)
         if self.n == self.n_observed:
             self._cache.update(dict(
                                     rates_convergence=rates_convergence,
