@@ -251,7 +251,7 @@ def get_Sigma2_stats(trj):
 
 def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
     _tol = 1e-10
-    n_0 = np.array(4 * [n_JI] + 4 * [n_IJ] + 4 * [n_JK]) / 5.0
+    n_0 = np.array(4 * [n_JI] + 4 * [n_IJ] + 4 * [n_JK]) / 4.0
     # n_0 = np.random.rand(12)# n_00 * np.random.rand(12)
     #
     # cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[4:8] * x[8:], x[:4] + x[8:], out=np.zeros(4), where=(x[:4]+x[8:]>2*_tol))) - n_IJK},
@@ -367,16 +367,24 @@ def dunkel_example2():
     lamda = 1
     r = 0.05
 
-    N = 10 ** 8
+    N = 10 ** 7
+
+    # real_to_observed = {0: 0,
+    #                     1: 1,
+    #                     2: 2,
+    #                     3: 3,
+    #                     4: 0,
+    #                     5: 1,
+    #                     6: 2,
+    #                     7: 3}
 
     real_to_observed = {0: 0,
                         1: 1,
                         2: 2,
-                        3: 3,
-                        4: 0,
-                        5: 1,
-                        6: 2,
-                        7: 3}
+                        3: 0,
+                        4: 1,
+                        5: 2}
+
     p_list = np.linspace(0.01, 0.94, 10)
 
     total_list = []
@@ -389,14 +397,21 @@ def dunkel_example2():
         q1 = lamda - r - p1
         q2 = lamda - r - p2
 
-        w = [[-lamda, p1, 0, q1, r, 0, 0, 0],
-             [q1, -lamda, p1, 0, 0, r, 0, 0],
-             [0, q1, -lamda, p1, 0, 0, r, 0],
-             [p1, 0, q1, -lamda, 0, 0, 0, r],
-             [r, 0, 0, 0, -lamda, q2, 0, p2],
-             [0, r, 0, 0, p2, -lamda, q2, 0],
-             [0, 0, r, 0, 0, p2, -lamda, q2],
-             [0, 0, 0, r, q2, 0, p2, -lamda]]
+        # w = [[-lamda, p1, 0, q1, r, 0, 0, 0],
+        #      [q1, -lamda, p1, 0, 0, r, 0, 0],
+        #      [0, q1, -lamda, p1, 0, 0, r, 0],
+        #      [p1, 0, q1, -lamda, 0, 0, 0, r],
+        #      [r, 0, 0, 0, -lamda, q2, 0, p2],
+        #      [0, r, 0, 0, p2, -lamda, q2, 0],
+        #      [0, 0, r, 0, 0, p2, -lamda, q2],
+        #      [0, 0, 0, r, q2, 0, p2, -lamda]]
+
+        w = [[-lamda, p1, q1, r, 0, 0],
+             [q1, -lamda, p1, 0, r, 0],
+             [p1, q1, -lamda, 0, 0, r],
+             [r, 0, 0, -lamda, q2, p2],
+             [0, r, 0, p2, -lamda, q2],
+             [0, 0, r, q2, p2, -lamda]]
 
         w = np.array(w, dtype=float)
 
