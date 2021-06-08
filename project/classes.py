@@ -384,28 +384,24 @@ class Trajectory:
     @property
     def real_jump_counter(self):
         ret = np.zeros((self.n, self.n))
-        i_list = self._real_trj[:-1]
-        j_list = self._real_trj[1:]
+        i_arr = self._real_trj[:-1]
+        j_arr = self._real_trj[1:]
         for i in range(self.n):
             for j in range(self.n):
                 if j != i:
-                    ret[j, i] = np.sum(i_list == i and j_list == j)
+                    ret[j, i] = np.sum(i_arr == i and j_arr == j)
         return ret
 
     @property
     def observed_jump_counter(self):
         ret = np.zeros((self.n_observed, self.n_observed))
-        i_list = self._observed_trj[:-1]
-        j_list = self._observed_trj[1:]
+        i_arr = self._observed_trj[:-1]
+        j_arr = self._observed_trj[1:]
         for i in range(self.n_observed):
             for j in range(self.n_observed):
                 if j != i:
-                    ret[j, i] = np.sum(i_list == i and j_list == j)
+                    ret[j, i] = np.sum(i_arr == i and j_arr == j)
         return ret
-
-    @property
-    def real_time_matrix(self):
-        ret = np.frompyfunc(list, 0, 1)(np.empty((self.n_observed,) * 3, dtype=object))
 
     @property
     def jumpProbabilities(self):
@@ -558,7 +554,7 @@ class Trajectory:
         steady_state = self.real_total_time_list / self.total_time
         return w, steady_state
 
-    def real_estimate_from_statistics(self):
+    def observed_estimate_from_statistics(self):
         """
         Estimates the rate matrix and the steady state from the trajectory statistics.
 
@@ -593,6 +589,18 @@ class Trajectory:
         """
         observed_jump_counter = self.observed_jump_counter
         return observed_jump_counter[j, i]/np.sum(observed_jump_counter) * self._get_p_ij_to_jk(i, j, k)
+
+    # this function is the last change
+    def _get_time_matrix(self):
+        ret = np.frompyfunc(list, 0, 1)(np.empty((self.n_observed,) * 3, dtype=object))
+        i_arr = self._observed_trj[:-2]
+        j_arr = self._observed_trj[1:-1]
+        k_arr = self._observed_trj[2:]
+        for i in range(self.n_observed):
+            for j in range(self.n_observed):
+                for k in range(self.n_observed):
+                    ret[i][j][k].append(np.sum(self._observed_waiting_times[1:-1][i_arr == i and j_arr == j and k_arr == k]))
+        return ret
 
     def _get_p_ij_to_jk(self, i, j, k):
         """
