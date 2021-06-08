@@ -299,17 +299,24 @@ class Model:
         return p
 
 
-class Trajectory(list):
+class Trajectory:
     # n is the number of micro states
     # n_observed is the number of observed(coarse-grained) states
     _real_to_observed = None  # A dictionary with the real state as key and the observed state as value
     _w = None  # The rate matrix. (n, n) numpy array.
     _jumpProbabilities = None  # The probability to jump from state j to state i. (n, n) numpy array.
     _observed_to_real = None  # A dictionary with the observed state as key and the possible real states list as value.
-    _total_time_list = None  # THe total time spent in each state. (n_observed, n_observed) numpy array
-    _counter_list = None  # The count of each observed state occurrence. (n_observed, 1) numpy array
-    _jump_counter = None  # The total observed jumps: i->j. (n_observed, n_observed) numpy array
-    _time_matrix = None  # A 3D matrix with a list of 2nd order waiting times in each element. (n_observed, n_observed, n_observed) numpy array, dtype=list
+
+    _real_trj = np.array([], dtype=int)
+    _observed_trj = np.array([], dtype=int)
+
+    _real_waiting_times = np.array([], dtype=float)
+    _observed_waiting_times = np.array([], dtype=float)
+
+    # _total_time_list = None  # The total time spent in each state. (n_observed, 1) numpy array
+    # _counter_list = None  # The count of each observed state occurrence. (n_observed, 1) numpy array
+    # _jump_counter = None  # The total observed jumps: j->i. (n_observed, n_observed) numpy array
+    # _time_matrix = None  # A 3D matrix with a list of 2nd order waiting times in each element. (n_observed, n_observed, n_observed) numpy array, dtype=list
     _prev_observed = None  # Previous observed state
     _tmp_t = None  # Temporary time spent in the current observed state
     _p_ij_to_jk_matrix = None  # Cache of p_ij_to_jk for (i, j, k). (n_observed, n_observed, n_observed) numpy array
@@ -328,7 +335,7 @@ class Trajectory(list):
 
     @property
     def observed_states(self):
-        return list(set(self.real_to_observed.values()))
+        return np.unique(self.real_to_observed.values())
 
     @property
     def n_observed(self):
@@ -344,36 +351,73 @@ class Trajectory(list):
         return self._steady_state
 
     @property
-    def total_time(self):
-        return np.sum(self._total_time_list)
+    def real_total_time_list(self):
+        return np.array([np.sum(self._real_waiting_times[self._real_trj == i]) for i in range(self.n)])
 
     @property
-    def mean_time(self):
-        return np.divide(self._total_time_list, self._counter_list, out=np.zeros_like(self._total_time_list), where=(self._counter_list != 0))
+    def observed_total_time_list(self):
+        return np.array([np.sum(self._observed_waiting_times[self._observed_trj == i]) for i in range(self.n_observed)])
+
+    @property
+    def real_counter_list(self):
+        return np.array([np.sum(self._real_trj == i) for i in range(self.n)])
+
+    @property
+    def observed_counter_list(self):
+        return np.array([np.sum(self._observed_trj == i) for i in range(self.n_observed)])
+
+    @property
+    def total_time(self):
+        return np.sum(self._observed_waiting_times)
+
+    @property
+    def real_mean_time(self):
+        _tol = 1e-10
+        return self.real_total_time_list/(self.real_counter_list + _tol)
+        # return np.divide(self.real_total_time_list, self.real_counter_list, out=np.zeros_like(self.real_total_time_list), where=(self.real_counter_list != 0))
+
+    @property
+    def observed_mean_time(self):
+        _tol = 1e-10
+        return self.observed_total_time_list / (self.observed_counter_list + _tol)
+
+    @property
+    def real_jump_counter(self):
+        ret = np.zeros((self.n, self.n))
+        i_list = self._real_trj[:-1]
+        j_list = self._real_trj[1:]
+        for i in range(self.n):
+            for j in range(self.n):
+                if j != i:
+                    ret[j, i] = np.sum(i_list == i and j_list == j)
+        return ret
+
+    @property
+    def observed_jump_counter(self):
+        ret = np.zeros((self.n_observed, self.n_observed))
+        i_list = self._observed_trj[:-1]
+        j_list = self._observed_trj[1:]
+        for i in range(self.n_observed):
+            for j in range(self.n_observed):
+                if j != i:
+                    ret[j, i] = np.sum(i_list == i and j_list == j)
+        return ret
+
+    @property
+    def real_time_matrix(self):
+        ret = np.frompyfunc(list, 0, 1)(np.empty((self.n_observed,) * 3, dtype=object))
 
     @property
     def jumpProbabilities(self):
         return self._jumpProbabilities
 
-    @property
-    def sigma(self):
-        """
-        Calculates the fluctuating steady state entropy
-
-        :return:
-        """
-        ret = np.log(self.steady_state[self[0][0]]/self.steady_state[self[-1][0]])[0]
-        tmp = np.multiply((self._jump_counter-self._jump_counter.T), np.log(np.divide(self.w, self.w.T)))
-        ret += np.sum(tmp)/2.0
-        return ret
-
-    def __init__(self, real_to_observed, w, steady_state, initial_state_index):
+    def __init__(self, real_to_observed, w, steady_state, initial_state):
         """
 
         :param real_to_observed: A dictionary with the real state as key and the observed state as value
         :param w: The rate matrix
         :param steady_state: The steady state probabilities
-        :param initial_state_index: The index of the initial state
+        :param initial_state: The initial state
         """
         super().__init__()
         self._w = w.copy()
@@ -391,21 +435,47 @@ class Trajectory(list):
         self._kde_matrix = np.empty((self.n_observed,) * 3, dtype=object)
         self._p_ij_to_jk_matrix = -np.ones((self.n_observed,)*3, dtype=float)
 
-        self._total_time_list = np.zeros((self.n_observed, 1))
-        self._counter_list = np.zeros((self.n_observed, 1))
-        self._jump_counter = np.zeros((self.n_observed, self.n_observed))
+        # self._total_time_list = np.zeros((self.n_observed, 1))
+        # self._counter_list = np.zeros((self.n_observed, 1))
+        # self._jump_counter = np.zeros((self.n_observed, self.n_observed))
 
-        t = np.random.exponential(1 / -self.w[initial_state_index, initial_state_index])
+        t = np.random.exponential(1 / -self.w[initial_state, initial_state])
         self._tmp_t = t
-        initial_state_observed = self._real_to_observed[initial_state_index]
-        self._total_time_list[initial_state_observed] += t
-        self._counter_list[initial_state_observed] += 1
+        # initial_state_observed = self.get_observed_state(initial_state)
+        # self._total_time_list[initial_state_observed] += t
+        # self._counter_list[initial_state_observed] += 1
 
-        state = State(index=initial_state_index,
-                      t=t
-                      )
+        # state = State(index=initial_state_index,
+        #               t=t
+        #               )
+        #
+        # self.append(state)
+        self.append_state(initial_state, t)
 
-        self.append(state)
+    def get_observed_state(self, state):
+        """
+
+        :param state: The real state
+        :return:
+        """
+        return self._real_to_observed[state]
+
+    def append_state(self, state, t):
+        """
+        Append new state to trajectory
+
+        :param state: The new state
+        :param t: The waiting time
+        :return:
+        """
+        self._real_trj = np.append(self._real_trj, state)
+        self._real_waiting_times = np.append(self._real_waiting_times, t)
+        observed_state = self.get_observed_state(state)
+        if len(self._observed_trj) != 0 and self._observed_trj[-1] == observed_state:
+            self._observed_waiting_times[-1] += t
+        else:
+            self._observed_trj = np.append(self._observed_trj, observed_state)
+            self._observed_waiting_times = np.append(self._observed_waiting_times, t)
 
     def jump_state(self):
         """
@@ -413,31 +483,31 @@ class Trajectory(list):
 
         :return:
         """
-        current_state = self[-1]
-        new_state_index = np.random.choice(np.arange(self.n), p=self.jumpProbabilities[:, current_state.index])
-        t = np.random.exponential(1 / -self.w[new_state_index, new_state_index])
-        new_state = State(index=new_state_index,
-                          t=t
-                          )
+        current_state = self._real_trj[-1]
+        new_state = np.random.choice(np.arange(self.n), p=self.jumpProbabilities[:, current_state.index])
+        t = np.random.exponential(1 / -self.w[new_state, new_state])
+        # new_state = State(index=new_state_index,
+        #                   t=t
+        #                   )
+        #
+        # current_observed = self.real_to_observed[current_state.index]
+        # new_observed = self.real_to_observed[new_state.index]
+        #
+        # self._total_time_list[new_observed] += t
+        # if current_observed != new_observed:
+        #     if self._prev_observed is not None:
+        #         # import pdb
+        #         # pdb.set_trace()
+        #         self._time_matrix[self._prev_observed][current_observed][new_observed].append(self._tmp_t)
+        #     self._tmp_t = t
+        #     self._counter_list[new_observed] += 1
+        #     self._jump_counter[new_observed, current_observed] += 1
+        #     self._prev_observed = current_observed
+        # else:
+        #     if self._prev_observed is not None:
+        #         self._tmp_t += t
 
-        current_observed = self.real_to_observed[current_state.index]
-        new_observed = self.real_to_observed[new_state.index]
-
-        self._total_time_list[new_observed] += t
-        if current_observed != new_observed:
-            if self._prev_observed is not None:
-                # import pdb
-                # pdb.set_trace()
-                self._time_matrix[self._prev_observed][current_observed][new_observed].append(self._tmp_t)
-            self._tmp_t = t
-            self._counter_list[new_observed] += 1
-            self._jump_counter[new_observed, current_observed] += 1
-            self._prev_observed = current_observed
-        else:
-            if self._prev_observed is not None:
-                self._tmp_t += t
-
-        self.append(new_state)
+        self.append_state(new_state, t)
         # return new_state
 
     def plot(self, real=False):
@@ -447,22 +517,20 @@ class Trajectory(list):
         :param real: A flag. If True plots the real trajectory, if False plots the observed trajectory. Default False.
         :return:
         """
-        N = len(self)
+        N = len(self._real_trj)
 
         T = 0
-        state = self[0]
-        index = state.index if real else self.real_to_observed[state.index]
+        state = self._real_trj[0] if real else self._observed_trj[0]
         plt.figure()
-        plt.hlines(index + 1, T, T + state.t)
-        T += state.t
+        plt.hlines(state + 1, T, T + self._real_waiting_times[0])
+        T += self._real_waiting_times[0]
         for i in range(1, N):
-            prev_index = index
-            state = self[i]
-            index = state.index if real else self.real_to_observed[state.index]
+            prev_state = state
+            state = self._real_trj[i] if real else self.get_observed_state(self._real_trj[i])
 
-            plt.vlines(T, prev_index + 1, index + 1, linestyles=':')
-            plt.hlines(index + 1, T, T + state.t)
-            T += state.t
+            plt.vlines(T, prev_state + 1, state + 1, linestyles=':')
+            plt.hlines(state + 1, T, T + self._real_waiting_times[i])
+            T += self._real_waiting_times[i]
 
         plt.xlim(0, T)
         plt.ylim(0, self.n + 1 if real else self.n_observed+1)
@@ -476,17 +544,32 @@ class Trajectory(list):
         plt.ylabel('State')
         # plt.show()
 
-    def estimate_from_statistics(self):
+    def real_estimate_from_statistics(self):
         """
         Estimates the rate matrix and the steady state from the trajectory statistics.
 
         :return: w, steady_state
         """
-        lamda = np.divide(1, self.mean_time, out=np.zeros_like(self.mean_time), where=(self.mean_time != 0))
-        total_jumps = np.sum(self._jump_counter, axis=0, keepdims=True)
-        w = self._jump_counter * np.divide(lamda.T, total_jumps, out=np.zeros_like(total_jumps), where=(total_jumps != 0))
+        lamda = np.divide(1, self.real_mean_time, out=np.zeros_like(self.real_mean_time), where=(self.real_mean_time != 0))
+        real_jump_counter = self.real_jump_counter
+        total_jumps = np.sum(real_jump_counter, axis=0, keepdims=True)
+        w = real_jump_counter * np.divide(lamda.T, total_jumps, out=np.zeros_like(total_jumps), where=(total_jumps != 0))
         np.fill_diagonal(w, -lamda)
-        steady_state = self._total_time_list / self.total_time
+        steady_state = self.real_total_time_list / self.total_time
+        return w, steady_state
+
+    def real_estimate_from_statistics(self):
+        """
+        Estimates the rate matrix and the steady state from the trajectory statistics.
+
+        :return: w, steady_state
+        """
+        lamda = np.divide(1, self.observed_mean_time, out=np.zeros_like(self.observed_mean_time), where=(self.observed_mean_time != 0))
+        observed_jump_counter = self.observed_jump_counter
+        total_jumps = np.sum(observed_jump_counter, axis=0, keepdims=True)
+        w = observed_jump_counter * np.divide(lamda.T, total_jumps, out=np.zeros_like(total_jumps), where=(total_jumps != 0))
+        np.fill_diagonal(w, -lamda)
+        steady_state = self.observed_total_time_list / self.total_time
         return w, steady_state
 
     def _create_observed_to_real(self):
@@ -508,7 +591,8 @@ class Trajectory(list):
         :param k: Third observed state
         :return:
         """
-        return self._jump_counter[j, i]/np.sum(self._jump_counter) * self._get_p_ij_to_jk(i, j, k)
+        observed_jump_counter = self.observed_jump_counter
+        return observed_jump_counter[j, i]/np.sum(observed_jump_counter) * self._get_p_ij_to_jk(i, j, k)
 
     def _get_p_ij_to_jk(self, i, j, k):
         """
@@ -585,7 +669,7 @@ class Trajectory(list):
         :param k: third state
         :return:
         """
-        w_est, p_est = self.estimate_from_statistics()
+        w_est, p_est = self.observed_estimate_from_statistics()
         n_est = w_est.T*p_est
         return n_est[i, j]*self._get_p_ij_to_jk(i, j, k)
 
