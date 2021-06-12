@@ -275,26 +275,32 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
             {'type': 'ineq', 'fun': lambda x: n_JK - np.sum(x[8:])}
             # {'type': 'ineq', 'fun': lambda x: n_KJ - np.sum(x[:4] - x[4:8] + x[8:])},
             ] + [{'type': 'ineq', 'fun': lambda x: x[i] - x[4 + i] + x[8 + i]} for i in range(4)]
-    jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.real(np.log((x[:4] + _tol) / (x[4:8] + _tol) + 0j)),
-                                    (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.real(np.log((x[4:8] + _tol) / (x[:4] + _tol) + 0j)),
-                                    (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.real(np.log((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol) + 0j))
+    # jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.real(np.log((x[:4] + _tol) / (x[4:8] + _tol) + 0j)),
+    #                                 (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.real(np.log((x[4:8] + _tol) / (x[:4] + _tol) + 0j)),
+    #                                 (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.real(np.log((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol) + 0j))
+    #                                 ])
+    jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.log(np.abs((x[:4] + _tol) / (x[4:8] + _tol))),
+                                    (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.log(np.abs((x[4:8] + _tol) / (x[:4] + _tol))),
+                                    (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.log(np.abs((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol)))
                                     ])
     bnds = 4 * [(0, n_JI)] + 4 * [(0, n_IJ)] + 4 * [(0, n_JK)]
     con_tol = 1e-6
     res = minimize(entropy_production, n_0, jac=jac, method='SLSQP',
                    options={'maxiter': 1e4, 'ftol': 1e-7}, bounds=bnds,
                    constraints=cons, tol=con_tol)
-    while res.status != 0 and con_tol < 1e-1:
+    ep_min = entropy_production(res.x)
+    while res.status != 0 and con_tol < 1e-3:
         # n_0 = np.random.rand(12)  # n_00 * np.random.rand(12)
         con_tol *= 4
         res = minimize(entropy_production, n_0, jac=jac, method='SLSQP',
                        options={'maxiter': 1e4, 'ftol': 1e-5}, bounds=bnds,
                        constraints=cons, tol=con_tol)
+        ep_min = min(ep_min, entropy_production(res.x))
 
     if res.status != 0:
         print("Didn't converge")
 
-    return entropy_production(res.x)
+    return ep_min#entropy_production(res.x)
 
 
 def dunkel():
@@ -349,7 +355,8 @@ def entropy_production(n):
     #         res += (n_jK[i] - n_Kj[i]) * np.log(n_jK[i] / n_Kj[i])
     _tol = 1e-10
 
-    res = np.sum((n_jI-n_Ij)*np.real(np.log((n_jI+_tol)/(n_Ij+_tol) + 0j)) + (n_jK-n_Kj)*np.real(np.log((n_jK+_tol)/(n_Kj+_tol) + 0j)))
+    # res = np.sum((n_jI-n_Ij)*np.real(np.log((n_jI+_tol)/(n_Ij+_tol) + 0j)) + (n_jK-n_Kj)*np.real(np.log((n_jK+_tol)/(n_Kj+_tol) + 0j)))
+    res = np.sum((n_jI-n_Ij)*np.log(np.abs((n_jI+_tol)/(n_Ij+_tol))) + (n_jK-n_Kj)*np.log(np.abs((n_jK+_tol)/(n_Kj+_tol))))
 
     return res
 
@@ -358,25 +365,34 @@ def ep2(x):
     a = x[0]
     b = x[1]
     _tol = 1e-10
-    return 4 * (a - b) * np.log((a+_tol) / (b+_tol))
+    return 4 * (a - b) * np.log(np.abs((a+_tol) / (b+_tol)))
 
 
 def dunkel_exmple():
     p_list = np.linspace(0, 0.99, 100)
     ep_list = []
     _tol = 1e-10
-    cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.square(x)) / (np.sum(x)+_tol) - p},
+    cons = [{'type': 'eq',
+             'fun': lambda x: np.sum(x**2) / (np.sum(x)+_tol) - p,
+             'jac': lambda x: np.array([1-2*(x[1]/(np.sum(x)+_tol))**2,
+                                        1-2*(x[0]/(np.sum(x)+_tol))**2])
+             },
             {'type': 'ineq', 'fun': lambda x: 1 - np.sum(x)}
             ]
-    bnds = tuple([(0, 1)] * 2)
+    jac = lambda x: 4*np.array([(x[0]-x[1])/(x[0]+_tol) + np.log(np.abs((x[0]+_tol)/(x[1]+_tol))),
+                                (x[1]-x[0])/(x[1]+_tol) + np.log(np.abs((x[1]+_tol)/(x[0]+_tol)))
+                                ])
+    bnds = [(0, 1)] * 2
     x_0 = np.array([0.2, 0.4])
     con_tol = 1e-10
     for p in p_list:
-        res = minimize(ep2, x_0, method='SLSQP', options={'maxiter': 1e4}, bounds=bnds, constraints=cons, tol=con_tol)
+        res = minimize(ep2, x_0, jac=jac, method='SLSQP', options={'maxiter': 1e4}, bounds=bnds, constraints=cons, tol=con_tol)
+        ep_min = ep2(res.x)
         while res.status != 0:
             con_tol *= 4
-            res = minimize(ep2, x_0, method='SLSQP', options={'maxiter': 1e4}, bounds=bnds, constraints=cons, tol=con_tol)
-        ep_list.append(ep2(res.x))
+            res = minimize(ep2, x_0, jac=jac, method='SLSQP', options={'maxiter': 1e4}, bounds=bnds, constraints=cons, tol=con_tol)
+            ep_min = min(ep_min, ep2(res.x))
+        ep_list.append(ep_min)
     plt.plot(p_list, ep_list)
     plt.show()
 
