@@ -98,7 +98,7 @@ def plot_dunkel():
         for ijk_stats in ijk_dict.values():
             ep += calc_Sigma2(**ijk_stats)/2.0
         Sigma2_list.append(ep)
-
+    print(Sigma2_list)
     plt.plot(x_list, pps_list, label='Passive')
     plt.plot(x_list, ips_list, label='Informed')
     plt.plot(x_list, Sigma_list, label='Total')
@@ -240,7 +240,7 @@ def get_Sigma2_stats(trj):
                 n_IJ = np.max([n_est[I, J], cutoff])
                 n_JK = np.max([n_est[J, K], cutoff])
                 # n_KJ = np.max([n_est[K, J], cutoff])
-                ijk_dict[f'{i}{j}{k}'] = dict(n_JI=n_JI,
+                ijk_dict[f'{I}{J}{K}'] = dict(n_JI=n_JI,
                                               n_IJ=n_IJ,
                                               n_JK=n_JK,
                                               n_IJK=n_IJK,
@@ -256,27 +256,51 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
     #
     # cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[4:8] * x[8:], x[:4] + x[8:], out=np.zeros(4), where=(x[:4]+x[8:]>2*_tol))) - n_IJK},
     #         {'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[:4] * (x[:4] - x[4:8] + x[8:]), x[:4] + x[8:], out=np.zeros(4), where=(x[:4]+x[8:]>2*_tol))) - n_KJI},
-    cons = [{'type': 'eq', 'fun': lambda x: np.sum(x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)) - n_IJK},
-            {'type': 'eq', 'fun': lambda x: np.sum(x[:4] * (x[:4] - x[4:8] + x[8:]) / (x[:4] + x[8:] + _tol)) - n_KJI},
+    cons = [{'type': 'eq',
+             'fun': lambda x: n_IJK - np.sum(x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)),
+             'jac': lambda x: np.concatenate([x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)**2,
+                                              -x[8:] / (x[:4] + x[8:] + _tol),
+                                              -x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)**2
+                                              ])
+             },
+            {'type': 'eq',
+             'fun': lambda x: n_KJI - np.sum(x[:4] - x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)),
+             'jac': lambda x: np.concatenate([x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)**2 - 1,
+                                              x[:4] / (x[:4] + x[8:] + _tol),
+                                              -x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)**2
+                                              ])
+             },
             {'type': 'ineq', 'fun': lambda x: n_JI - np.sum(x[:4])},
             {'type': 'ineq', 'fun': lambda x: n_IJ - np.sum(x[4:8])},
             {'type': 'ineq', 'fun': lambda x: n_JK - np.sum(x[8:])}
             # {'type': 'ineq', 'fun': lambda x: n_KJ - np.sum(x[:4] - x[4:8] + x[8:])},
             ] + [{'type': 'ineq', 'fun': lambda x: x[i] - x[4 + i] + x[8 + i]} for i in range(4)]
+    # jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.real(np.log((x[:4] + _tol) / (x[4:8] + _tol) + 0j)),
+    #                                 (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.real(np.log((x[4:8] + _tol) / (x[:4] + _tol) + 0j)),
+    #                                 (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.real(np.log((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol) + 0j))
+    #                                 ])
+    jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.log(np.abs((x[:4] + _tol) / (x[4:8] + _tol))),
+                                    (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.log(np.abs((x[4:8] + _tol) / (x[:4] + _tol))),
+                                    (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.log(np.abs((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol)))
+                                    ])
     bnds = 4 * [(0, n_JI)] + 4 * [(0, n_IJ)] + 4 * [(0, n_JK)]
-    con_tol = 1e-10
-    res = minimize(entropy_production, n_0, method='SLSQP', options={'maxiter': 1e5},
-                   bounds=bnds,
+    con_tol = 1e-6
+    res = minimize(entropy_production, n_0, jac=jac, method='SLSQP',
+                   options={'maxiter': 1e4, 'ftol': 1e-7}, bounds=bnds,
                    constraints=cons, tol=con_tol)
-
-    while res.status != 0 and con_tol < 1:
-        con_tol *= 4
+    ep_min = entropy_production(res.x)
+    while res.status != 0 and con_tol < 1e-3:
         # n_0 = np.random.rand(12)  # n_00 * np.random.rand(12)
-        res = minimize(entropy_production, n_0, method='SLSQP',
-                       options={'maxiter': 1e5}, bounds=bnds,
+        con_tol *= 4
+        res = minimize(entropy_production, n_0, jac=jac, method='SLSQP',
+                       options={'maxiter': 1e4, 'ftol': 1e-5}, bounds=bnds,
                        constraints=cons, tol=con_tol)
+        ep_min = min(ep_min, entropy_production(res.x))
 
-    return entropy_production(res.x)
+    if res.status != 0:
+        print("Didn't converge")
+
+    return ep_min#entropy_production(res.x)
 
 
 def dunkel():
@@ -325,13 +349,14 @@ def entropy_production(n):
 
     # res = 0
     # for i in range(m):
-    #     if n_Ij[i] > cutoff and n_jI[i] > cutoff:
+    #     if n_Ij[i] > 0 and n_jI[i] > 0:
     #         res += (n_jI[i] - n_Ij[i]) * np.log(n_jI[i] / n_Ij[i])
-    #     if n_Kj[i] > cutoff and n_jK[i] > cutoff:
+    #     if n_Kj[i] > 0 and n_jK[i] > 0:
     #         res += (n_jK[i] - n_Kj[i]) * np.log(n_jK[i] / n_Kj[i])
     _tol = 1e-10
 
-    res = np.sum((n_jI-n_Ij)*np.real(np.log((n_jI+_tol)/(n_Ij+_tol))) + (n_jK-n_Kj)*np.real(np.log((n_jK+_tol)/(n_Kj+_tol))))
+    # res = np.sum((n_jI-n_Ij)*np.real(np.log((n_jI+_tol)/(n_Ij+_tol) + 0j)) + (n_jK-n_Kj)*np.real(np.log((n_jK+_tol)/(n_Kj+_tol) + 0j)))
+    res = np.sum((n_jI-n_Ij)*np.log(np.abs((n_jI+_tol)/(n_Ij+_tol))) + (n_jK-n_Kj)*np.log(np.abs((n_jK+_tol)/(n_Kj+_tol))))
 
     return res
 
@@ -340,25 +365,34 @@ def ep2(x):
     a = x[0]
     b = x[1]
     _tol = 1e-10
-    return 4 * (a - b) * np.log((a+_tol) / (b+_tol))
+    return 4 * (a - b) * np.log(np.abs((a+_tol) / (b+_tol)))
 
 
 def dunkel_exmple():
     p_list = np.linspace(0, 0.99, 100)
     ep_list = []
     _tol = 1e-10
-    cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.square(x)) / (np.sum(x)+_tol) - p},
+    cons = [{'type': 'eq',
+             'fun': lambda x: np.sum(x**2) / (np.sum(x)+_tol) - p,
+             'jac': lambda x: np.array([1-2*(x[1]/(np.sum(x)+_tol))**2,
+                                        1-2*(x[0]/(np.sum(x)+_tol))**2])
+             },
             {'type': 'ineq', 'fun': lambda x: 1 - np.sum(x)}
             ]
-    bnds = tuple([(0, 1)] * 2)
+    jac = lambda x: 4*np.array([(x[0]-x[1])/(x[0]+_tol) + np.log(np.abs((x[0]+_tol)/(x[1]+_tol))),
+                                (x[1]-x[0])/(x[1]+_tol) + np.log(np.abs((x[1]+_tol)/(x[0]+_tol)))
+                                ])
+    bnds = [(0, 1)] * 2
     x_0 = np.array([0.2, 0.4])
     con_tol = 1e-10
     for p in p_list:
-        res = minimize(ep2, x_0, method='SLSQP', options={'maxiter': 1e4}, bounds=bnds, constraints=cons, tol=con_tol)
+        res = minimize(ep2, x_0, jac=jac, method='SLSQP', options={'maxiter': 1e4}, bounds=bnds, constraints=cons, tol=con_tol)
+        ep_min = ep2(res.x)
         while res.status != 0:
             con_tol *= 4
-            res = minimize(ep2, x_0, method='SLSQP', options={'maxiter': 1e4}, bounds=bnds, constraints=cons, tol=con_tol)
-        ep_list.append(ep2(res.x))
+            res = minimize(ep2, x_0, jac=jac, method='SLSQP', options={'maxiter': 1e4}, bounds=bnds, constraints=cons, tol=con_tol)
+            ep_min = min(ep_min, ep2(res.x))
+        ep_list.append(ep_min)
     plt.plot(p_list, ep_list)
     plt.show()
 
@@ -367,7 +401,7 @@ def dunkel_example2():
     lamda = 1
     r = 0.05
 
-    N = 10 ** 7
+    N = 10 ** 6
 
     # real_to_observed = {0: 0,
     #                     1: 1,
@@ -385,7 +419,7 @@ def dunkel_example2():
                         4: 1,
                         5: 2}
 
-    p_list = np.linspace(0.01, 0.94, 10)
+    p_list = np.linspace(r/2, 1-r-0.05, 10)
 
     total_list = []
     # kld_list = []
@@ -415,7 +449,7 @@ def dunkel_example2():
 
         w = np.array(w, dtype=float)
 
-        model = Model(real_to_observed=real_to_observed, w=w)
+        model = Model(real_to_observed=real_to_observed, w=w, dt=0.0001)
         model.sample_trajectory(N)
 
         total_list.append(model.steady_state_Sigma)
@@ -423,7 +457,7 @@ def dunkel_example2():
 
         ijk_dict = get_Sigma2_stats(model.trajectory)
         sigma2 = 0
-        for ijk_stats in ijk_dict.values():
+        for ijk, ijk_stats in ijk_dict.items():
             sigma2 += calc_Sigma2(**ijk_stats)/2.0
         sigma2_list.append(sigma2)
         print(total_list[-1], ' - ', sigma2_list[-1])
@@ -475,6 +509,6 @@ if __name__ == '__main__':
     # task2()
     # task3()
 
-    # task4()
-    dunkel_example2()
+    task4()
+    # dunkel_example2()
     pass
