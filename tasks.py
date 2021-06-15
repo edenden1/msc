@@ -275,25 +275,25 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
             {'type': 'ineq', 'fun': lambda x: n_JK - np.sum(x[8:])}
             # {'type': 'ineq', 'fun': lambda x: n_KJ - np.sum(x[:4] - x[4:8] + x[8:])},
             ] + [{'type': 'ineq', 'fun': lambda x: x[i] - x[4 + i] + x[8 + i]} for i in range(4)]
-    # jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.real(np.log((x[:4] + _tol) / (x[4:8] + _tol) + 0j)),
-    #                                 (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.real(np.log((x[4:8] + _tol) / (x[:4] + _tol) + 0j)),
-    #                                 (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.real(np.log((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol) + 0j))
+    jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.real(np.log((x[:4] + _tol) / (x[4:8] + _tol) + 0j)),
+                                    (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.real(np.log((x[4:8] + _tol) / (x[:4] + _tol) + 0j)),
+                                    (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.real(np.log((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol) + 0j))
     #                                 ])
-    jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.log(np.abs((x[:4] + _tol) / (x[4:8] + _tol))),
-                                    (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.log(np.abs((x[4:8] + _tol) / (x[:4] + _tol))),
-                                    (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.log(np.abs((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol)))
+    # jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.log(np.abs((x[:4] + _tol) / (x[4:8] + _tol))),
+    #                                 (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.log(np.abs((x[4:8] + _tol) / (x[:4] + _tol))),
+    #                                 (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.log(np.abs((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol)))
                                     ])
     bnds = 4 * [(0, n_JI)] + 4 * [(0, n_IJ)] + 4 * [(0, n_JK)]
     con_tol = 1e-6
     res = minimize(entropy_production, n_0, jac=jac, method='SLSQP',
-                   options={'maxiter': 1e4, 'ftol': 1e-7}, bounds=bnds,
+                   options={'maxiter': 1e3, 'ftol': 1e-7}, bounds=bnds,
                    constraints=cons, tol=con_tol)
     ep_min = entropy_production(res.x)
-    while res.status != 0 and con_tol < 1e-3:
+    while res.status != 0 and con_tol < 1:
         # n_0 = np.random.rand(12)  # n_00 * np.random.rand(12)
         con_tol *= 4
         res = minimize(entropy_production, n_0, jac=jac, method='SLSQP',
-                       options={'maxiter': 1e4, 'ftol': 1e-5}, bounds=bnds,
+                       options={'maxiter': 1e3, 'ftol': 1e-5}, bounds=bnds,
                        constraints=cons, tol=con_tol)
         ep_min = min(ep_min, entropy_production(res.x))
 
@@ -355,8 +355,8 @@ def entropy_production(n):
     #         res += (n_jK[i] - n_Kj[i]) * np.log(n_jK[i] / n_Kj[i])
     _tol = 1e-10
 
-    # res = np.sum((n_jI-n_Ij)*np.real(np.log((n_jI+_tol)/(n_Ij+_tol) + 0j)) + (n_jK-n_Kj)*np.real(np.log((n_jK+_tol)/(n_Kj+_tol) + 0j)))
-    res = np.sum((n_jI-n_Ij)*np.log(np.abs((n_jI+_tol)/(n_Ij+_tol))) + (n_jK-n_Kj)*np.log(np.abs((n_jK+_tol)/(n_Kj+_tol))))
+    res = np.sum((n_jI-n_Ij)*np.real(np.log((n_jI+_tol)/(n_Ij+_tol) + 0j)) + (n_jK-n_Kj)*np.real(np.log((n_jK+_tol)/(n_Kj+_tol) + 0j)))
+    # res = np.sum((n_jI-n_Ij)*np.log(np.abs((n_jI+_tol)/(n_Ij+_tol))) + (n_jK-n_Kj)*np.log(np.abs((n_jK+_tol)/(n_Kj+_tol))))
 
     return res
 
@@ -401,7 +401,7 @@ def dunkel_example2():
     lamda = 1
     r = 0.05
 
-    N = 10 ** 6
+    N = 10 ** 7
 
     # real_to_observed = {0: 0,
     #                     1: 1,
@@ -456,6 +456,8 @@ def dunkel_example2():
         # kld_list.append(model.get_Sigma_KLD())
 
         ijk_dict = get_Sigma2_stats(model.trajectory)
+        import pdb
+        pdb.set_trace()
         sigma2 = 0
         for ijk, ijk_stats in ijk_dict.items():
             sigma2 += calc_Sigma2(**ijk_stats)/2.0
