@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
+from scipy.integrate import quad
+import sympy
 # import kalepy as kale
 
 class Model:
@@ -577,6 +579,33 @@ class Trajectory(list):
                             ret += self._get_p_ijk(i, j, k) * self._get_D(i, j, k, k, j, i) / mean_T
         return ret
 
+    @property
+    def Sigma_KLD(self):
+        ret = 0
+        for i in range(self.n_observed):
+            for j in range(self.n_observed):
+                if j != i:
+                    for k in range(self.n_observed):
+                        if k != i and k != j:
+                            pass
+        return ret
+
+    def get_real_wtd(self, i, j):
+        t = sympy.symbols('t')
+        w_tmp = self.w.copy()
+        np.fill_diagonal(w_tmp, 0)
+        return (w_tmp * np.exp(-t / np.sum(w_tmp, axis=0)))[j, i]
+
+    @staticmethod
+    def L(f):
+        t, s = sympy.symbols('t, s')
+        return sympy.laplace_transform(f, t, s, noconds=True)
+
+    @staticmethod
+    def invL(F):
+        t, s = sympy.symbols('t, s')
+        return sympy.inverse_laplace_transform(F, s, t, noconds=True)
+
     def _get_n_IJK(self, i, j, k):
         """
 
@@ -589,6 +618,38 @@ class Trajectory(list):
         n_est = w_est.T*p_est
         return n_est[i, j]*self._get_p_ij_to_jk(i, j, k)
 
+    def observed_wtd_laplace_transform(self, H):
+        states = [i for i in range(self.n)]
+        inv_matrix = lambda s: np.linalg.inv(np.eye(self.n) - self.real_wtd_laplace_transform(s))
+        for i in range(self.n - 1):
+            for j in range(i + 1, self.n):
+                other_states = list(set(states) - {i, j})
+                for k in range(self.n - 3):
+                    K = other_states[k]
+                    for l in range(k, self.n - 2):
+                        L = other_states[l]
+                        # ret +=
+
+    def real_wtd_laplace_transform(self, s):
+        real_wtd_laplace = np.zeros((self.n, self.n))
+        for i in range(self.n):
+            for j in range(self.n):
+                real_wtd_laplace[j, i] = quad(lambda t: self.real_waiting_time_distribution(t)[j, i]*np.exp(-s*t), a=0, b=np.inf)
+        return real_wtd_laplace
+
+    def real_waiting_time_distribution(self, t):
+        w_tmp = self.w.copy()
+        np.fill_diagonal(w_tmp, 0)
+        wtd = w_tmp*np.exp(-t/np.sum(w_tmp, axis=0))
+        return wtd
+
+    def observed_waiting_time_distribution(self, t):
+        real_wtd_laplace = np.empty((self.n, self.n), dtype=object)
+        observed_wtd_laplace = self.observed_wtd_laplace_transform()
+        for i in range(self.n):
+            for j in range(self.n):
+                real_wtd_laplace[j, i] = quad(lambda s: observed_wtd_laplace(s)[j, i] * np.exp(s * t), a=0, b=np.inf)
+        return real_wtd_laplace
 
 class State:
     _index = None

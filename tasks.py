@@ -92,7 +92,7 @@ def plot_dunkel():
 
     for x in x_list:
         # print(x)
-        with open(f'stats_{x}.json', 'r') as jsonFile:
+        with open(f'stats\stats5_{x}.json', 'r') as jsonFile:
             ijk_dict = json.load(jsonFile)
         ep = 0
         for ijk_stats in ijk_dict.values():
@@ -108,6 +108,34 @@ def plot_dunkel():
     plt.xlabel('x')
     plt.yscale('log')
     plt.show()
+
+
+def save_dunkel_stats():
+    real_to_observed = {0: 0,
+                        1: 1,
+                        2: 2,
+                        3: 2
+                        }
+
+    w = np.array([[-11, 2, 0, 1],
+                  [3, -52.2, 2, 35],
+                  [0, 50, -77, 0.7],
+                  [8, 0.2, 75, -36.7]], dtype=float)
+
+    x_list = np.sort([x for x in range(-3, 5)] + [-0.67])
+
+    N = 10 ** 7
+
+    for x in x_list:
+        print(x)
+        w_tmp = w.copy()
+        np.fill_diagonal(w_tmp, 0)
+        w_tmp[0, 1] = w[0, 1] * np.exp(x)
+        w_tmp[1, 0] = w[1, 0] * np.exp(-x)
+        np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
+        model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
+        model_tmp.sample_trajectory(N)
+        save_statistics(trj=model_tmp.trajectory, name=f'stats5_{float(x)}.json')
 
 
 def task1():
@@ -249,6 +277,12 @@ def get_Sigma2_stats(trj):
     return ijk_dict
 
 
+def save_statistics(trj, name):
+    ijk_dict = get_Sigma2_stats(trj)
+    with open(name, 'w') as jsonFile:
+        json.dump(ijk_dict, jsonFile)
+
+
 def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
     _tol = 1e-10
     n_0 = np.array(4 * [n_JI] + 4 * [n_IJ] + 4 * [n_JK]) / 4.0
@@ -278,11 +312,11 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
     jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.real(np.log((x[:4] + _tol) / (x[4:8] + _tol) + 0j)),
                                     (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.real(np.log((x[4:8] + _tol) / (x[:4] + _tol) + 0j)),
                                     (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.real(np.log((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol) + 0j))
-    #                                 ])
+                                    ])
     # jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.log(np.abs((x[:4] + _tol) / (x[4:8] + _tol))),
     #                                 (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.log(np.abs((x[4:8] + _tol) / (x[:4] + _tol))),
     #                                 (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.log(np.abs((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol)))
-                                    ])
+    #                                 ])
     bnds = 4 * [(0, n_JI)] + 4 * [(0, n_IJ)] + 4 * [(0, n_JK)]
     con_tol = 1e-6
     res = minimize(entropy_production, n_0, jac=jac, method='SLSQP',
@@ -456,8 +490,6 @@ def dunkel_example2():
         # kld_list.append(model.get_Sigma_KLD())
 
         ijk_dict = get_Sigma2_stats(model.trajectory)
-        import pdb
-        pdb.set_trace()
         sigma2 = 0
         for ijk, ijk_stats in ijk_dict.items():
             sigma2 += calc_Sigma2(**ijk_stats)/2.0
@@ -513,4 +545,5 @@ if __name__ == '__main__':
 
     task4()
     # dunkel_example2()
+    # save_dunkel_stats()
     pass
