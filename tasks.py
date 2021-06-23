@@ -92,7 +92,7 @@ def plot_dunkel():
 
     for x in x_list:
         # print(x)
-        with open(f'stats\stats5_{x}.json', 'r') as jsonFile:
+        with open(f'stats\stats_{x}.json', 'r') as jsonFile:
             ijk_dict = json.load(jsonFile)
         ep = 0
         for ijk_stats in ijk_dict.values():
@@ -322,19 +322,19 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
     res = minimize(entropy_production, n_0, jac=jac, method='SLSQP',
                    options={'maxiter': 1e3, 'ftol': 1e-7}, bounds=bnds,
                    constraints=cons, tol=con_tol)
-    ep_min = entropy_production(res.x)
-    while res.status != 0 and con_tol < 1:
+    # ep_min = entropy_production(res.x)
+    while res.status != 0 and con_tol < 1e-2:
         # n_0 = np.random.rand(12)  # n_00 * np.random.rand(12)
         con_tol *= 4
         res = minimize(entropy_production, n_0, jac=jac, method='SLSQP',
                        options={'maxiter': 1e3, 'ftol': 1e-5}, bounds=bnds,
                        constraints=cons, tol=con_tol)
-        ep_min = min(ep_min, entropy_production(res.x))
+        # ep_min = min(ep_min, entropy_production(res.x))
 
     if res.status != 0:
         print("Didn't converge")
 
-    return ep_min#entropy_production(res.x)
+    return entropy_production(res.x)  # ep_min
 
 
 def dunkel():
@@ -543,7 +543,19 @@ if __name__ == '__main__':
     # task2()
     # task3()
 
-    task4()
+    # task4()
     # dunkel_example2()
     # save_dunkel_stats()
+    real_to_observed = {0: 0,
+                        1: 1,
+                        2: 2,
+                        3: 2
+                        }
+
+    w = np.array([[-11, 2, 0, 1],
+                  [3, -52.2, 2, 35],
+                  [0, 50, -77, 0.7],
+                  [8, 0.2, 75, -36.7]], dtype=float)
+
+    model = Model(real_to_observed, w)
     pass
