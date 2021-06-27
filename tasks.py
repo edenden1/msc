@@ -92,7 +92,7 @@ def plot_dunkel():
 
     for x in x_list:
         # print(x)
-        with open(f'stats\stats_{x}.json', 'r') as jsonFile:
+        with open(f'stats\stats6_{x}.json', 'r') as jsonFile:
             ijk_dict = json.load(jsonFile)
         ep = 0
         for ijk_stats in ijk_dict.values():
@@ -135,7 +135,7 @@ def save_dunkel_stats():
         np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
         model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
         model_tmp.sample_trajectory(N)
-        save_statistics(trj=model_tmp.trajectory, name=f'stats5_{float(x)}.json')
+        save_statistics(trj=model_tmp.trajectory, name=f'stats\stats6_{float(x)}.json')
 
 
 def task1():
@@ -309,32 +309,43 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
             {'type': 'ineq', 'fun': lambda x: n_JK - np.sum(x[8:])}
             # {'type': 'ineq', 'fun': lambda x: n_KJ - np.sum(x[:4] - x[4:8] + x[8:])},
             ] + [{'type': 'ineq', 'fun': lambda x: x[i] - x[4 + i] + x[8 + i]} for i in range(4)]
-    jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.real(np.log((x[:4] + _tol) / (x[4:8] + _tol) + 0j)),
-                                    (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.real(np.log((x[4:8] + _tol) / (x[:4] + _tol) + 0j)),
-                                    (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.real(np.log((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol) + 0j))
-                                    ])
-    # jac = lambda x: np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.log(np.abs((x[:4] + _tol) / (x[4:8] + _tol))),
-    #                                 (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.log(np.abs((x[4:8] + _tol) / (x[:4] + _tol))),
-    #                                 (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.log(np.abs((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol)))
-    #                                 ])
     bnds = 4 * [(0, n_JI)] + 4 * [(0, n_IJ)] + 4 * [(0, n_JK)]
     con_tol = 1e-6
-    res = minimize(entropy_production, n_0, jac=jac, method='SLSQP',
+    res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
                    options={'maxiter': 1e3, 'ftol': 1e-7}, bounds=bnds,
                    constraints=cons, tol=con_tol)
-    # ep_min = entropy_production(res.x)
-    while res.status != 0 and con_tol < 1e-2:
+    ep_min = entropy_production(res.x)
+    while res.status != 0 and con_tol < 1:
         # n_0 = np.random.rand(12)  # n_00 * np.random.rand(12)
         con_tol *= 4
-        res = minimize(entropy_production, n_0, jac=jac, method='SLSQP',
+        res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
                        options={'maxiter': 1e3, 'ftol': 1e-5}, bounds=bnds,
                        constraints=cons, tol=con_tol)
-        # ep_min = min(ep_min, entropy_production(res.x))
-
+        ep_min = min(ep_min, entropy_production(res.x))
     if res.status != 0:
         print("Didn't converge")
+    else:
+        ep_min = entropy_production(res.x)
 
-    return entropy_production(res.x)  # ep_min
+    return ep_min
+
+
+def epr_jac(x):
+    _tol = 1e-10
+    n_JI = x[:4]
+    n_IJ = x[4:8]
+    n_JK = x[8:]
+    n_KJ = n_JK + n_JI - n_IJ
+    tmp_jac = lambda a, b: (a - b) / (a + _tol) + np.real(np.log((a + _tol) / (b + _tol) + 0j))
+    ret1 = np.concatenate([tmp_jac(n_JI, n_IJ), tmp_jac(n_IJ, n_JI), tmp_jac(n_JK, n_KJ)])
+    # ret2 = np.concatenate([(x[:4] - x[4:8]) / (x[:4] + _tol) + np.real(np.log((x[:4] + _tol) / (x[4:8] + _tol) + 0j)),
+    #                                 (x[4:8] - x[:4]) / (x[4:8] + _tol) + np.real(np.log((x[4:8] + _tol) / (x[:4] + _tol) + 0j)),
+    #                                 (-x[:4] + x[4:8]) / (x[8:] + _tol) + np.real(np.log((x[8:] + _tol) / (x[:4] - x[4:8] + x[8:] + _tol) + 0j))
+    #                                 ])
+    # if not (ret1 == ret2).all():
+    #     import pdb
+    #     pdb.set_trace()
+    return ret1
 
 
 def dunkel():
@@ -374,12 +385,12 @@ def entropy_production(n):
     :return:
     """
     m = 4
+    _tol = 1e-10
 
     n_jI = np.array(n[:m])
     n_Ij = np.array(n[m:2 * m])
     n_jK = np.array(n[2 * m:3 * m])
     n_Kj = n_jI - n_Ij + n_jK
-
 
     # res = 0
     # for i in range(m):
@@ -387,7 +398,6 @@ def entropy_production(n):
     #         res += (n_jI[i] - n_Ij[i]) * np.log(n_jI[i] / n_Ij[i])
     #     if n_Kj[i] > 0 and n_jK[i] > 0:
     #         res += (n_jK[i] - n_Kj[i]) * np.log(n_jK[i] / n_Kj[i])
-    _tol = 1e-10
 
     res = np.sum((n_jI-n_Ij)*np.real(np.log((n_jI+_tol)/(n_Ij+_tol) + 0j)) + (n_jK-n_Kj)*np.real(np.log((n_jK+_tol)/(n_Kj+_tol) + 0j)))
     # res = np.sum((n_jI-n_Ij)*np.log(np.abs((n_jI+_tol)/(n_Ij+_tol))) + (n_jK-n_Kj)*np.log(np.abs((n_jK+_tol)/(n_Kj+_tol))))
@@ -435,7 +445,7 @@ def dunkel_example2():
     lamda = 1
     r = 0.05
 
-    N = 10 ** 7
+    N = 10 ** 6
 
     # real_to_observed = {0: 0,
     #                     1: 1,
@@ -549,7 +559,7 @@ if __name__ == '__main__':
     real_to_observed = {0: 0,
                         1: 1,
                         2: 2,
-                        3: 2
+                        3: 3
                         }
 
     w = np.array([[-11, 2, 0, 1],
@@ -558,4 +568,6 @@ if __name__ == '__main__':
                   [8, 0.2, 75, -36.7]], dtype=float)
 
     model = Model(real_to_observed, w)
+    model.sample_trajectory(10**6)
+    trj = model.trajectory
     pass

@@ -402,7 +402,7 @@ class Model:
         w_tmp = self.w.copy()
         np.fill_diagonal(w_tmp, 0)
         p_ij_matrix = w_tmp/w_tmp.sum(axis=0)
-        return (self.steady_state[i]*p_ij_matrix[j, i]).item()
+        return p_ij_matrix[j, i]
 
     def get_p_ijk(self, i, j, k):
         w_tmp = self.w.copy()
@@ -702,9 +702,10 @@ class Trajectory(list):
         :param k: third state
         :return:
         """
-        w_est, p_est = self.estimate_from_statistics()
-        n_est = w_est.T*p_est
-        return n_est[i, j]*self._get_p_ij_to_jk(i, j, k)
+        # w_est, p_est = self.estimate_from_statistics()
+        # n_est = w_est.T*p_est
+        # return n_est[i, j]*self._get_p_ij_to_jk(i, j, k)
+        return len(self._time_matrix[i, j, k])/self.total_time
 
 
 class State:
