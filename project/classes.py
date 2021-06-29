@@ -30,6 +30,10 @@ class Model:
         return len(set(self._real_to_observed.values()))
 
     @property
+    def observed_states(self):
+        return list(set(self._real_to_observed.values()))
+
+    @property
     def steady_state(self):
         if self._steady_state is None:
             self._steady_state = self.numeric_steady_state()
@@ -112,7 +116,7 @@ class Model:
         self._dt = dt
         self._cache = {}
 
-    def numeric_steady_state(self, dt=None, T=10.0, plot_flag=False):
+    def numeric_steady_state(self, dt=None, T=100.0, plot_flag=False):
         """
         Calculates the steady state numerically
 
@@ -144,7 +148,7 @@ class Model:
 
         return p
 
-    def numeric_steady_state_stalling(self, dt=None, T=10.0, plot_flag=False):
+    def numeric_steady_state_stalling(self, dt=None, T=100.0, plot_flag=False):
         """
         Calculates the steady state numerically
 
@@ -398,22 +402,30 @@ class Model:
             n_matrix_observed[:, obs] = col
         return n_matrix_observed
 
-    def get_p_ij(self, i, j):
-        w_tmp = self.w.copy()
+    def get_p_ij(self, i, j, obs=False):
+        if obs:
+            w_tmp = self.n_matrix_observed.T
+        else:
+            w_tmp = self.w.copy()
         np.fill_diagonal(w_tmp, 0)
         p_ij_matrix = w_tmp/w_tmp.sum(axis=0)
         return p_ij_matrix[j, i]
 
-    def get_p_ijk(self, i, j, k):
-        w_tmp = self.w.copy()
-        np.fill_diagonal(w_tmp, 0)
-        p_ij_matrix = w_tmp / w_tmp.sum(axis=0)
-        return p_ij_matrix[i, j]*self.get_p_ij(j, k)
-
-    def get_n_ijk(self, i, j, k):
-        n_tmp = self.n_matrix
+    def get_p_ijk(self, i, j, k, obs=False):
+        if obs:
+            n_tmp = self.n_matrix_observed
+        else:
+            n_tmp = self.n_matrix
         np.fill_diagonal(n_tmp, 0)
-        return n_tmp[i, j]*self.get_p_ij(j, k)
+        return n_tmp[i, j] * self.get_p_ij(j, k, obs=obs)/n_tmp.sum()
+
+    def get_n_ijk(self, i, j, k, obs=False):
+        if obs:
+            n_tmp = self.n_matrix_observed
+        else:
+            n_tmp = self.n_matrix
+        np.fill_diagonal(n_tmp, 0)
+        return n_tmp[i, j]*self.get_p_ij(j, k, obs=obs)
 
 
 class Trajectory(list):
