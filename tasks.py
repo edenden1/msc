@@ -347,17 +347,17 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
     #         {'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[:4] * (x[:4] - x[4:8] + x[8:]), x[:4] + x[8:], out=np.zeros(4), where=(x[:4]+x[8:]>2*_tol))) - n_KJI},
     cons = [{'type': 'eq',
              'fun': lambda x: n_IJK - np.sum(x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)),
-             # 'jac': lambda x: np.concatenate([x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)**2,
-             #                                  -x[8:] / (x[:4] + x[8:] + _tol),
-             #                                  -x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)**2
-             #                                  ])
+             'jac': lambda x: np.concatenate([x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)**2,
+                                              -x[8:] / (x[:4] + x[8:] + _tol),
+                                              -x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)**2
+                                              ])
              },
             {'type': 'eq',
              'fun': lambda x: n_KJI - np.sum(x[:4] - x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)),
-             # 'jac': lambda x: np.concatenate([x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)**2 - 1,
-             #                                  x[:4] / (x[:4] + x[8:] + _tol),
-             #                                  -x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)**2
-             #                                  ])
+             'jac': lambda x: np.concatenate([x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)**2 - 1,
+                                              x[:4] / (x[:4] + x[8:] + _tol),
+                                              -x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)**2
+                                              ])
              },
             {'type': 'ineq', 'fun': lambda x: n_JI - np.sum(x[:4])},
             {'type': 'ineq', 'fun': lambda x: n_IJ - np.sum(x[4:8])},
