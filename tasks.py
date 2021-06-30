@@ -111,7 +111,7 @@ def plot_dunkel():
         # model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
         # ijk_dict = get_Sigma2_stats_from_model(model_tmp)
 
-        with open(f'stats\stats7_{x}.json', 'r') as jsonFile:
+        with open(f'stats\stats8_{x}.json', 'r') as jsonFile:
             ijk_dict = json.load(jsonFile)
         ep = 0
         for ijk_stats in ijk_dict.values():
@@ -147,12 +147,14 @@ def save_dunkel_stats():
 
     for x in x_list:
         print(x)
-        name = f'stats\stats7_{float(x)}.json'
+        name = f'stats\stats8_{float(x)}.json'
         w_tmp = w.copy()
         np.fill_diagonal(w_tmp, 0)
         w_tmp[0, 1] = w[0, 1] * np.exp(x)
         w_tmp[1, 0] = w[1, 0] * np.exp(-x)
-        np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
+        lamda_arr = np.sum(w_tmp, axis=0)
+        np.fill_diagonal(w_tmp, (-lamda_arr).tolist())
+        w_tmp /= lamda_arr
         model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
         # model_tmp.sample_trajectory(N)
         # save_statistics(trj=model_tmp.trajectory, name=f'stats\stats6_{float(x)}.json')
@@ -345,17 +347,17 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
     #         {'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[:4] * (x[:4] - x[4:8] + x[8:]), x[:4] + x[8:], out=np.zeros(4), where=(x[:4]+x[8:]>2*_tol))) - n_KJI},
     cons = [{'type': 'eq',
              'fun': lambda x: n_IJK - np.sum(x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)),
-             'jac': lambda x: np.concatenate([x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)**2,
-                                              -x[8:] / (x[:4] + x[8:] + _tol),
-                                              -x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)**2
-                                              ])
+             # 'jac': lambda x: np.concatenate([x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)**2,
+             #                                  -x[8:] / (x[:4] + x[8:] + _tol),
+             #                                  -x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)**2
+             #                                  ])
              },
             {'type': 'eq',
              'fun': lambda x: n_KJI - np.sum(x[:4] - x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)),
-             'jac': lambda x: np.concatenate([x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)**2 - 1,
-                                              x[:4] / (x[:4] + x[8:] + _tol),
-                                              -x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)**2
-                                              ])
+             # 'jac': lambda x: np.concatenate([x[4:8] * x[8:] / (x[:4] + x[8:] + _tol)**2 - 1,
+             #                                  x[:4] / (x[:4] + x[8:] + _tol),
+             #                                  -x[:4] * x[4:8] / (x[:4] + x[8:] + _tol)**2
+             #                                  ])
              },
             {'type': 'ineq', 'fun': lambda x: n_JI - np.sum(x[:4])},
             {'type': 'ineq', 'fun': lambda x: n_IJ - np.sum(x[4:8])},
@@ -416,18 +418,20 @@ def dunkel():
                   [0, 50, -77, 0.7],
                   [8, 0.2, 75, -36.7]], dtype=float)
 
-    x = -3
+    x = 4
 
     w_tmp = w.copy()
     np.fill_diagonal(w_tmp, 0)
     w_tmp[0, 1] = w[0, 1] * np.exp(x)
     w_tmp[1, 0] = w[1, 0] * np.exp(-x)
-    np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
-
+    lamda_arr = np.sum(w_tmp, axis=0)
+    np.fill_diagonal(w_tmp, (-lamda_arr).tolist())
+    w_tmp = w_tmp/lamda_arr
+    print(w_tmp)
     model = Model(real_to_observed, w_tmp, 0.0001)
-    print(model.w.T * model.steady_state)
-    print(model.steady_state)
-    model.sample_trajectory(N=10 ** 6)
+    # print(model.w.T * model.steady_state)
+    # print(model.steady_state)
+    model.sample_trajectory(N=10 ** 7)
     # trj = model.trajectory
     # w_est, p_est = trj.estimate_from_statistics()
 
@@ -548,11 +552,9 @@ def dunkel_example2():
              [0, 0, r, q2, p2, -lamda]]
 
         w = np.array(w, dtype=float)
-        print(w)
+        # print(w)
         model = Model(real_to_observed=real_to_observed, w=w, dt=0.0001)
-        print(model.steady_state)
-        import pdb
-        pdb.set_trace()
+
         # model.sample_trajectory(N)
 
         total_list.append(model.steady_state_Sigma)
@@ -560,7 +562,7 @@ def dunkel_example2():
 
         # ijk_dict = get_Sigma2_stats_from_trajectory(model.trajectory)
         ijk_dict = get_Sigma2_stats_from_model(model)
-        print(ijk_dict)
+        # print(ijk_dict)
         sigma2 = 0
         for ijk, ijk_stats in ijk_dict.items():
             sigma2 += calc_Sigma2(**ijk_stats)/2.0
@@ -584,38 +586,30 @@ def main():
     trj = model.trajectory
     w_est, p_est = trj.estimate_from_statistics()
     n_est = w_est.T * p_est
-    w, p = model.w, model.steady_state
-    n = w.T * p
-    n_IJK = trj._get_n_IJK(0, 2, 1)
-    n_KJI = trj._get_n_IJK(1, 2, 0)
-    n_00 = np.array(4 * [n_est[2, 0]] + 4 * [n_est[0, 2]] + 4 * [n_est[2, 1]])
-    n_0 = n_00 / 4.0
-    cons = [{'type': 'eq', 'fun': lambda x: np.sum(x[4:8] * x[8:] / (x[:4] + x[8:])) - n_IJK},
-            {'type': 'eq', 'fun': lambda x: np.sum(x[:4] * (x[:4] + x[4:8] - x[8:]) / (x[:4] + x[8:])) - n_KJI},
-            {'type': 'ineq', 'fun': lambda x: n_est[2, 0] - np.sum(x[:4])},
-            {'type': 'ineq', 'fun': lambda x: n_est[0, 2] - np.sum(x[4:8])},
-            {'type': 'ineq', 'fun': lambda x: n_est[2, 1] - np.sum(x[8:])},
-            {'type': 'ineq', 'fun': lambda x: n_est[1, 2] - np.sum(x[:4] + x[4:8] - x[8:])},
-            {'type': 'ineq', 'fun': lambda x: np.min(x[:4] + x[4:8] - x[8:])}
-            ]
-    cutoff = 1e-4
-    bnds = tuple([(cutoff, None)] * 12)
-    res = minimize(entropy_production(cutoff), n_0, method='SLSQP', options={'disp': True, 'maxiter': 1e5}, bounds=bnds,
-                   constraints=cons)
-    test = res.x
-    test = np.append(test, res.x[:4] + res.x[4:8] - res.x[8:]).reshape(1, -1)
-    test[test < cutoff * 1.1] = 0
-    ep = entropy_production(res.x)
-    return ep
+    # w, p = model.w, model.steady_state
+    n_obs = model.n_matrix_observed
+    print(n_obs)
+    print(n_est)
+    print(trj._get_n_matrix())
+    for i in range(3):
+        for j in range(3):
+            if j != i:
+                for k in range(3):
+                    if k not in [i, j]:
+                        print(f'ijk = {i}{j}{k}')
+                        print(trj._get_n_IJK(i, j, k), ' - ', model.get_n_ijk(i,j,k,obs=True))
+                        print(trj._get_n_IJK(k, j, i), ' - ', model.get_n_ijk(k,j,i,obs=True))
+    # n_0 = np.array(4 * [n_est[2, 0]] + 4 * [n_est[0, 2]] + 4 * [n_est[2, 1]])/4.0
+
 
 
 if __name__ == '__main__':
     # task1()
     # task2()
     # task3()
-
-    task4()
-    # dunkel_example2()
+    # main()
+    # task4()
+    dunkel_example2()
     # save_dunkel_stats()
     # real_to_observed = {0: 0,
     #                     1: 1,

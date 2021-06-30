@@ -116,17 +116,17 @@ class Model:
         self._dt = dt
         self._cache = {}
 
-    def numeric_steady_state(self, dt=None, T=100.0, plot_flag=False):
+    def numeric_steady_state(self, dt=None, plot_flag=False):
         """
         Calculates the steady state numerically
 
         :param dt: The time delta
-        :param T: The total time
         :param plot_flag: A flag to plot the probabilities over time
         :return:
         """
         dt = self._dt if dt is None else dt
         p = self._initialize_p()
+        T = 100.0 / np.min(np.abs(np.diagonal(self.w)))
         steps = int(T/dt)
 
         p_list = [p]
@@ -148,7 +148,7 @@ class Model:
 
         return p
 
-    def numeric_steady_state_stalling(self, dt=None, T=100.0, plot_flag=False):
+    def numeric_steady_state_stalling(self, dt=None, plot_flag=False):
         """
         Calculates the steady state numerically
 
@@ -159,6 +159,7 @@ class Model:
         """
         dt = self._dt if dt is None else dt
         p = self._initialize_p()
+        T = 100.0 / np.min(np.abs(np.diagonal(self.w)))
         steps = int(T/dt)
 
         p_list = [p]
@@ -718,6 +719,9 @@ class Trajectory(list):
         # n_est = w_est.T*p_est
         # return n_est[i, j]*self._get_p_ij_to_jk(i, j, k)
         return len(self._time_matrix[i, j, k])/self.total_time
+
+    def _get_n_matrix(self):
+        return self._jump_counter.T/self.total_time
 
 
 class State:
