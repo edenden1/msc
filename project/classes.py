@@ -403,30 +403,27 @@ class Model:
             n_matrix_observed[:, obs] = col
         return n_matrix_observed
 
-    def get_p_ij(self, i, j, obs=False):
-        if obs:
-            w_tmp = self.n_matrix_observed.T
-        else:
-            w_tmp = self.w.copy()
+    def get_p_ij(self, i, j):
+        w_tmp = self.w.copy()
         np.fill_diagonal(w_tmp, 0)
         p_ij_matrix = w_tmp/w_tmp.sum(axis=0)
         return p_ij_matrix[j, i]
 
-    def get_p_ijk(self, i, j, k, obs=False):
-        if obs:
-            n_tmp = self.n_matrix_observed
-        else:
-            n_tmp = self.n_matrix
-        np.fill_diagonal(n_tmp, 0)
-        return n_tmp[i, j] * self.get_p_ij(j, k, obs=obs)/n_tmp.sum()
-
     def get_n_ijk(self, i, j, k, obs=False):
         if obs:
-            n_tmp = self.n_matrix_observed
+            ret = 0
+            i_states = self._observed_to_real[i]
+            j_states = self._observed_to_real[j]
+            k_states = self._observed_to_real[k]
+            for I in i_states:
+                for J in j_states:
+                    for K in k_states:
+                        ret += self.get_n_ijk(I, J, K)
         else:
             n_tmp = self.n_matrix
-        np.fill_diagonal(n_tmp, 0)
-        return n_tmp[i, j]*self.get_p_ij(j, k, obs=obs)
+            np.fill_diagonal(n_tmp, 0)
+            ret = n_tmp[i, j]*self.get_p_ij(j, k)
+        return ret
 
 
 class Trajectory(list):

@@ -143,11 +143,11 @@ def save_dunkel_stats():
 
     x_list = np.sort([x for x in range(-3, 5)] + [-0.67])
 
-    N = 10 ** 7
+    N = 10 ** 8
 
     for x in x_list:
         print(x)
-        name = f'stats\stats8_{float(x)}.json'
+        name = f'stats\stats9_{float(x)}.json'
         w_tmp = w.copy()
         np.fill_diagonal(w_tmp, 0)
         w_tmp[0, 1] = w[0, 1] * np.exp(x)
@@ -156,10 +156,9 @@ def save_dunkel_stats():
         np.fill_diagonal(w_tmp, (-lamda_arr).tolist())
         w_tmp /= lamda_arr
         model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
-        # model_tmp.sample_trajectory(N)
-        # save_statistics(trj=model_tmp.trajectory, name=f'stats\stats6_{float(x)}.json')
-        # ijk_dict = get_Sigma2_stats_from_trajectory(trj)
-        ijk_dict = get_Sigma2_stats_from_model(model_tmp)
+        model_tmp.sample_trajectory(N)
+        ijk_dict = get_Sigma2_stats_from_trajectory(model_tmp.trajectory)
+        # ijk_dict = get_Sigma2_stats_from_model(model_tmp)
         with open(name, 'w') as jsonFile:
             json.dump(ijk_dict, jsonFile)
 
@@ -472,36 +471,7 @@ def ep2(x):
     return 4 * (a - b) * np.log(np.abs((a+_tol) / (b+_tol)))
 
 
-def dunkel_exmple():
-    p_list = np.linspace(0, 0.99, 100)
-    ep_list = []
-    _tol = 1e-10
-    cons = [{'type': 'eq',
-             'fun': lambda x: np.sum(x**2) / (np.sum(x)+_tol) - p,
-             'jac': lambda x: np.array([1-2*(x[1]/(np.sum(x)+_tol))**2,
-                                        1-2*(x[0]/(np.sum(x)+_tol))**2])
-             },
-            {'type': 'ineq', 'fun': lambda x: 1 - np.sum(x)}
-            ]
-    jac = lambda x: 4*np.array([(x[0]-x[1])/(x[0]+_tol) + np.log(np.abs((x[0]+_tol)/(x[1]+_tol))),
-                                (x[1]-x[0])/(x[1]+_tol) + np.log(np.abs((x[1]+_tol)/(x[0]+_tol)))
-                                ])
-    bnds = [(0, 1)] * 2
-    x_0 = np.array([0.2, 0.4])
-    con_tol = 1e-10
-    for p in p_list:
-        res = minimize(ep2, x_0, jac=jac, method='SLSQP', options={'maxiter': 1e4}, bounds=bnds, constraints=cons, tol=con_tol)
-        ep_min = ep2(res.x)
-        while res.status != 0:
-            con_tol *= 4
-            res = minimize(ep2, x_0, jac=jac, method='SLSQP', options={'maxiter': 1e4}, bounds=bnds, constraints=cons, tol=con_tol)
-            ep_min = min(ep_min, ep2(res.x))
-        ep_list.append(ep_min)
-    plt.plot(p_list, ep_list)
-    plt.show()
-
-
-def dunkel_example2():
+def dunkel_example():
     lamda = 1
     r = 0.05
 
@@ -523,7 +493,7 @@ def dunkel_example2():
                         4: 1,
                         5: 2}
 
-    p_list = np.linspace(r/2, 1-r-0.05, 10)
+    p_list = np.linspace(r/2, 1-r-0.05, 20)
 
     total_list = []
     # kld_list = []
@@ -554,7 +524,6 @@ def dunkel_example2():
         w = np.array(w, dtype=float)
         # print(w)
         model = Model(real_to_observed=real_to_observed, w=w, dt=0.0001)
-
         # model.sample_trajectory(N)
 
         total_list.append(model.steady_state_Sigma)
@@ -562,7 +531,7 @@ def dunkel_example2():
 
         # ijk_dict = get_Sigma2_stats_from_trajectory(model.trajectory)
         ijk_dict = get_Sigma2_stats_from_model(model)
-        # print(ijk_dict)
+        print(ijk_dict)
         sigma2 = 0
         for ijk, ijk_stats in ijk_dict.items():
             sigma2 += calc_Sigma2(**ijk_stats)/2.0
@@ -576,6 +545,7 @@ def dunkel_example2():
     plt.plot(p_list, sigma2_list, label='Sigma2')
     plt.legend()
     plt.show()
+
 
 def main():
     # w = np.array([[-11, 2, 0, 1],
@@ -602,15 +572,14 @@ def main():
     # n_0 = np.array(4 * [n_est[2, 0]] + 4 * [n_est[0, 2]] + 4 * [n_est[2, 1]])/4.0
 
 
-
 if __name__ == '__main__':
     # task1()
     # task2()
     # task3()
     # main()
     # task4()
-    dunkel_example2()
-    # save_dunkel_stats()
+    # dunkel_example()
+    save_dunkel_stats()
     # real_to_observed = {0: 0,
     #                     1: 1,
     #                     2: 2,
