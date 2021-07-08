@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from project import Model
+from project import * #Model
 import os
 import pickle
 from scipy.optimize import minimize
@@ -111,7 +111,7 @@ def plot_dunkel():
         # model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
         # ijk_dict = get_Sigma2_stats_from_model(model_tmp)
 
-        with open(f'stats\stats8_{x}.json', 'r') as jsonFile:
+        with open(f'stats\stats9_{x}.json', 'r') as jsonFile:
             ijk_dict = json.load(jsonFile)
         ep = 0
         for ijk_stats in ijk_dict.values():
@@ -143,7 +143,7 @@ def save_dunkel_stats():
 
     x_list = np.sort([x for x in range(-3, 5)] + [-0.67])
 
-    N = 10 ** 8
+    N = 10 ** 7
 
     for x in x_list:
         print(x)
@@ -155,10 +155,15 @@ def save_dunkel_stats():
         lamda_arr = np.sum(w_tmp, axis=0)
         np.fill_diagonal(w_tmp, (-lamda_arr).tolist())
         w_tmp /= lamda_arr
-        model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
-        model_tmp.sample_trajectory(N)
-        ijk_dict = get_Sigma2_stats_from_trajectory(model_tmp.trajectory)
+        # model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
+        # model_tmp.sample_trajectory(N)
+
+        # ijk_dict = get_Sigma2_stats_from_trajectory(model_tmp.trajectory)
         # ijk_dict = get_Sigma2_stats_from_model(model_tmp)
+
+        trj = TrajectorySigma2(real_to_observed, w_tmp, N)
+        ijk_dict = get_Sigma2_stats_from_trajectory_sigma2(trj)
+
         with open(name, 'w') as jsonFile:
             json.dump(ijk_dict, jsonFile)
 
@@ -292,6 +297,36 @@ def get_Sigma2_stats_from_trajectory(trj):
                 n_JI = np.max([n_est[J, I], cutoff])
                 n_IJ = np.max([n_est[I, J], cutoff])
                 n_JK = np.max([n_est[J, K], cutoff])
+                # n_KJ = np.max([n_est[K, J], cutoff])
+                ijk_dict[f'{I}{J}{K}'] = dict(n_JI=n_JI,
+                                              n_IJ=n_IJ,
+                                              n_JK=n_JK,
+                                              n_IJK=n_IJK,
+                                              n_KJI=n_KJI
+                                              )
+    return ijk_dict
+
+
+def get_Sigma2_stats_from_trajectory_sigma2(trj):
+    observed_states = list(set(trj._real_to_observed.values()))
+    n_observed = len(observed_states)
+    IJ_stats, IJK_stats = trj.get_sigma2_stats()
+    cutoff = 1e-10
+    ijk_dict = {}
+    for j in range(n_observed):
+        J = observed_states[j]
+        other_states = observed_states[:j]
+        if j < n_observed - 1:
+            other_states += observed_states[j + 1:]
+        for i in range(n_observed - 1):
+            I = other_states[i]
+            for k in range(i+1, n_observed - 1):
+                K = other_states[k]
+                n_IJK = np.max([IJK_stats[I, J, K], cutoff])
+                n_KJI = np.max([IJK_stats[K, J, I], cutoff])
+                n_JI = np.max([IJ_stats[J, I], cutoff])
+                n_IJ = np.max([IJ_stats[I, J], cutoff])
+                n_JK = np.max([IJ_stats[J, K], cutoff])
                 # n_KJ = np.max([n_est[K, J], cutoff])
                 ijk_dict[f'{I}{J}{K}'] = dict(n_JI=n_JI,
                                               n_IJ=n_IJ,
@@ -475,7 +510,7 @@ def dunkel_example():
     lamda = 1
     r = 0.05
 
-    N = 10 ** 6
+    N = 10 ** 7
 
     # real_to_observed = {0: 0,
     #                     1: 1,
@@ -525,12 +560,14 @@ def dunkel_example():
         # print(w)
         model = Model(real_to_observed=real_to_observed, w=w, dt=0.0001)
         # model.sample_trajectory(N)
-
+        #
         total_list.append(model.steady_state_Sigma)
-        # kld_list.append(model.get_Sigma_KLD())
-
-        # ijk_dict = get_Sigma2_stats_from_trajectory(model.trajectory)
-        ijk_dict = get_Sigma2_stats_from_model(model)
+        # # kld_list.append(model.get_Sigma_KLD())
+        #
+        # # ijk_dict = get_Sigma2_stats_from_trajectory(model.trajectory)
+        # ijk_dict = get_Sigma2_stats_from_model(model)
+        trj = TrajectorySigma2(real_to_observed, w, N)
+        ijk_dict = get_Sigma2_stats_from_trajectory_sigma2(trj)
         print(ijk_dict)
         sigma2 = 0
         for ijk, ijk_stats in ijk_dict.items():
@@ -579,19 +616,20 @@ if __name__ == '__main__':
     # main()
     # task4()
     # dunkel_example()
-    save_dunkel_stats()
-    # real_to_observed = {0: 0,
-    #                     1: 1,
-    #                     2: 2,
-    #                     3: 2
-    #                     }
-    #
-    # w = np.array([[-11, 2, 0, 1],
-    #               [3, -52.2, 2, 35],
-    #               [0, 50, -77, 0.7],
-    #               [8, 0.2, 75, -36.7]], dtype=float)
-    #
+    # save_dunkel_stats()
+    real_to_observed = {0: 0,
+                        1: 1,
+                        2: 2,
+                        3: 2
+                        }
+
+    w = np.array([[-11, 2, 0, 1],
+                  [3, -52.2, 2, 35],
+                  [0, 50, -77, 0.7],
+                  [8, 0.2, 75, -36.7]], dtype=float)
+
     # model = Model(real_to_observed, w)
     # model.sample_trajectory(10**7)
     # trj = model.trajectory
+    trj = TrajectorySigma2(real_to_observed, w, N=10**7)
     pass

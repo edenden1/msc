@@ -750,3 +750,71 @@ class State:
         :return:
         """
         self._t = self.t+t
+
+
+class TrajectorySigma2:
+    _real_to_observed = None
+    _N = None
+    _w = None
+    _steady_state = None
+    _trj = None
+    _waiting_times = None
+    _t = None
+
+    def __init__(self, real_to_observed, w, N, initial_state=0):
+        self._real_to_observed = real_to_observed
+        self._w = w
+        self._N = N
+
+        self._trj = np.zeros(N, dtype=int)
+        self._trj[0] = initial_state
+        self._waiting_times = np.zeros(N)
+        self._waiting_times[0] = np.random.exponential(-1 / w[self._trj[0], self._trj[0]])
+
+        w_tmp = w.copy()
+        np.fill_diagonal(w_tmp, 0)
+        jump_probabilities = w_tmp/w_tmp.sum(axis=0, keepdims=True)
+        n_states = w.shape[0]
+
+        print('start trajectory')
+
+        for i in range(N-1):
+            self._trj[i+1] = np.random.choice(np.arange(n_states), p=jump_probabilities[:, self._trj[i]])
+            self._waiting_times[i+1] = np.random.exponential(-1 / w[self._trj[i+1], self._trj[i+1]])
+
+        print('end trajectory')
+
+        self._t = np.cumsum(self._waiting_times)
+
+    def get_sigma2_stats(self):
+        observed_states = list(set(self._real_to_observed.values()))
+        n_observed = len(observed_states)
+
+        # Observed states
+        observed_trj = np.zeros(self._trj.shape) #np.array([self._real_to_observed[state] for state in self._trj])
+        for key, value in self._real_to_observed.items():
+            observed_trj[self._trj == key] = value
+
+        # Removing repeating states
+        not_repeat_mask = (self._trj[:-1] != self._trj[1:])
+        not_repeat_mask = np.concatenate([[True], not_repeat_mask])
+        observed_trj = observed_trj[not_repeat_mask]
+
+        T = self._t[-1]
+
+        # I -> J stats
+        IJ_stats = np.zeros(2*(n_observed,))
+        for I in observed_states:
+            for J in observed_states:
+                if J != I:
+                    IJ_stats[I, J] = np.sum((observed_trj[:-1] == I) & (observed_trj[1:] == J)) / T
+
+        # I -> J -> K stats
+        IJK_stats = np.zeros(3*(n_observed,))
+        for I in observed_states:
+            for J in observed_states:
+                if J != I:
+                    for K in observed_states:
+                        if K != I and K != J:
+                            IJK_stats[I, J, K] = np.sum((observed_trj[:-2] == I) & (observed_trj[1:-1] == J) & (observed_trj[2:] == K)) / T
+        return IJ_stats, IJK_stats
