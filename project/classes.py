@@ -779,12 +779,14 @@ class TrajectorySigma2:
         print('start trajectory')
 
         for i in range(N-1):
-            self._trj[i+1] = np.random.choice(np.arange(n_states), p=jump_probabilities[:, self._trj[i]])
+            if np.log10(i+1) % 1 == 0:
+                print(i+1)
+            self._trj[i+1] = np.random.choice(n_states, p=jump_probabilities[:, self._trj[i]])
             self._waiting_times[i+1] = np.random.exponential(-1 / w[self._trj[i+1], self._trj[i+1]])
 
         print('end trajectory')
 
-        self._t = np.cumsum(self._waiting_times)
+        self._t = np.concatenate([[0], np.cumsum(self._waiting_times)])
 
     def get_sigma2_stats(self):
         observed_states = list(set(self._real_to_observed.values()))
@@ -796,7 +798,7 @@ class TrajectorySigma2:
             observed_trj[self._trj == key] = value
 
         # Removing repeating states
-        not_repeat_mask = (self._trj[:-1] != self._trj[1:])
+        not_repeat_mask = (observed_trj[:-1] != observed_trj[1:])
         not_repeat_mask = np.concatenate([[True], not_repeat_mask])
         observed_trj = observed_trj[not_repeat_mask]
 
