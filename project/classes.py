@@ -36,7 +36,10 @@ class Model:
     @property
     def steady_state(self):
         if self._steady_state is None:
-            self._steady_state = self.numeric_steady_state()
+            try:
+                self._steady_state = self.get_steady_state()
+            except IndexError:
+                self._steady_state = self.numeric_steady_state()
         return self._steady_state
 
     @property
@@ -115,6 +118,13 @@ class Model:
 
         self._dt = dt
         self._cache = {}
+
+    def get_steady_state(self):
+        eig_vals, eig_vecs = np.linalg.eig(self._w + np.eye(self.n))
+        mask = (np.imag(eig_vals) == 0) & (np.real(eig_vals)*1000//1000 == 1)
+        ind = np.where(mask)[0][0]
+        p = np.real(eig_vecs[:, ind]).reshape(self.n, 1)
+        return p/np.sum(p)
 
     def numeric_steady_state(self, dt=None, plot_flag=False):
         """
