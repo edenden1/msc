@@ -1,1 +1,1 @@
-from .classes import Model
+from .classes import *

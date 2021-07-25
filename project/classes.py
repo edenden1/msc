@@ -30,9 +30,16 @@ class Model:
         return len(set(self._real_to_observed.values()))
 
     @property
+    def observed_states(self):
+        return list(set(self._real_to_observed.values()))
+
+    @property
     def steady_state(self):
         if self._steady_state is None:
-            self._steady_state = self.numeric_steady_state()
+            try:
+                self._steady_state = self.get_steady_state()
+            except IndexError:
+                self._steady_state = self.numeric_steady_state()
         return self._steady_state
 
     @property
@@ -112,17 +119,24 @@ class Model:
         self._dt = dt
         self._cache = {}
 
-    def numeric_steady_state(self, dt=None, T=10.0, plot_flag=False):
+    def get_steady_state(self):
+        eig_vals, eig_vecs = np.linalg.eig(self._w + np.eye(self.n))
+        mask = (np.imag(eig_vals) == 0) & (np.real(eig_vals)*1000//1000 == 1)
+        ind = np.where(mask)[0][0]
+        p = np.real(eig_vecs[:, ind]).reshape(self.n, 1)
+        return p/np.sum(p)
+
+    def numeric_steady_state(self, dt=None, plot_flag=False):
         """
         Calculates the steady state numerically
 
         :param dt: The time delta
-        :param T: The total time
         :param plot_flag: A flag to plot the probabilities over time
         :return:
         """
         dt = self._dt if dt is None else dt
         p = self._initialize_p()
+        T = 100.0 / np.min(np.abs(np.diagonal(self.w)))
         steps = int(T/dt)
 
         p_list = [p]
@@ -144,7 +158,7 @@ class Model:
 
         return p
 
-    def numeric_steady_state_stalling(self, dt=None, T=10.0, plot_flag=False):
+    def numeric_steady_state_stalling(self, dt=None, plot_flag=False):
         """
         Calculates the steady state numerically
 
@@ -155,6 +169,7 @@ class Model:
         """
         dt = self._dt if dt is None else dt
         p = self._initialize_p()
+        T = 100.0 / np.min(np.abs(np.diagonal(self.w)))
         steps = int(T/dt)
 
         p_list = [p]
@@ -299,6 +314,126 @@ class Model:
         p = np.random.rand(self.n, 1)
         p /= np.sum(p)
         return p
+
+    def observed_wtd_laplace_transform(self, H):
+        states = [i for i in range(self.n)]
+        inv_matrix = lambda s: np.linalg.inv(np.eye(self.n) - self.real_wtd_laplace_transform(s))
+        for i in range(self.n - 1):
+            for j in range(i + 1, self.n):
+                other_states = list(set(states) - {i, j})
+                for k in range(self.n - 3):
+                    K = other_states[k]
+                    for l in range(k, self.n - 2):
+                        L = other_states[l]
+                        # ret +=
+
+    def real_wtd_laplace_transform(self, s):
+        real_wtd_laplace = np.zeros((self.n, self.n))
+        for i in range(self.n):
+            for j in range(self.n):
+                real_wtd_laplace[j, i] = quad(lambda t: self.real_waiting_time_distribution(t)[j, i]*np.exp(-s*t), a=0, b=np.inf)
+        return real_wtd_laplace
+
+    def real_waiting_time_distribution(self, t):
+        w_tmp = self.w.copy()
+        np.fill_diagonal(w_tmp, 0)
+        wtd = w_tmp*np.exp(-t/np.sum(w_tmp, axis=0))
+        return wtd
+
+    def observed_waiting_time_distribution(self, t):
+        real_wtd_laplace = np.empty((self.n, self.n), dtype=object)
+        observed_wtd_laplace = self.observed_wtd_laplace_transform()
+        for i in range(self.n):
+            for j in range(self.n):
+                real_wtd_laplace[j, i] = quad(lambda s: observed_wtd_laplace(s)[j, i] * np.exp(s * t), a=0, b=np.inf)
+        return real_wtd_laplace
+
+    @property
+    def Sigma_KLD(self):
+        t, s = sympy.symbols('t, s')
+        ret = 0
+        for I in range(self.n_observed-1):
+            i_states = self._observed_to_real[I]
+            for J in range(I+1, self.n_observed):
+                j_states = self._observed_to_real[J]
+                for K in range(self.n_observed):
+                    if K != I and K != J:
+                        k_states = self._observed_to_real[K]
+                        if len(k_states) > 1:
+                            for i in i_states:
+                                for j in j_states:
+                                    for k in k_states:
+                                        ret += self.get_Sigma_WTD(i, j, k)
+                                        ret += self.get_Sigma_WTD(k, j, i)
+
+
+        return ret
+
+    def get_Sigma_WTD(self, i, j, k):
+        t = sympy.symbols('t')
+        laplace_ij = self.get_real_laplace_wtd(j, i)
+        laplace_jk = self.get_real_laplace_wtd(j, k)
+        self.get_p_ijk(i, j, k) * sympy.integrate(laplace_ij*sympy.log(laplace_ij/laplace_jk), (t, 0, sympy.oo))
+
+    def get_real_wtd(self):
+        t = sympy.symbols('t')
+        w_tmp = self.w.copy()
+        np.fill_diagonal(w_tmp, 0)
+        return w_tmp * np.exp(-t / np.sum(w_tmp, axis=0))
+
+    def get_real_laplace_wtd(self, i, j):
+        return self.L(self.get_real_wtd(i, j))
+
+    @staticmethod
+    def L(f):
+        t, s = sympy.symbols('t, s')
+        return sympy.laplace_transform(f, t, s, noconds=True)
+
+    @staticmethod
+    def invL(F):
+        t, s = sympy.symbols('t, s')
+        return sympy.inverse_laplace_transform(F, s, t, noconds=True)
+
+    @property
+    def n_matrix(self):
+        return self.w.T*self.steady_state
+
+    @property
+    def n_matrix_observed(self):
+        n_matrix = self.n_matrix
+        n_matrix_observed = np.zeros((self.n_observed, self.n_observed))
+        tmp_matrix = np.zeros((self.n_observed, self.n))
+        for obs in range(self.n_observed):
+            real_list = self._observed_to_real[obs]
+            row = n_matrix[real_list, :].sum(axis=0)
+            tmp_matrix[obs, :] = row
+        for obs in range(self.n_observed):
+            real_list = self._observed_to_real[obs]
+            col = tmp_matrix[:, real_list].sum(axis=1)
+            n_matrix_observed[:, obs] = col
+        return n_matrix_observed
+
+    def get_p_ij(self, i, j):
+        w_tmp = self.w.copy()
+        np.fill_diagonal(w_tmp, 0)
+        p_ij_matrix = w_tmp/w_tmp.sum(axis=0)
+        return p_ij_matrix[j, i]
+
+    def get_n_ijk(self, i, j, k, obs=False):
+        if obs:
+            ret = 0
+            i_states = self._observed_to_real[i]
+            j_states = self._observed_to_real[j]
+            k_states = self._observed_to_real[k]
+            for I in i_states:
+                for J in j_states:
+                    for K in k_states:
+                        ret += self.get_n_ijk(I, J, K)
+        else:
+            n_tmp = self.n_matrix
+            np.fill_diagonal(n_tmp, 0)
+            ret = n_tmp[i, j]*self.get_p_ij(j, k)
+        return ret
 
 
 class Trajectory(list):
@@ -579,33 +714,6 @@ class Trajectory(list):
                             ret += self._get_p_ijk(i, j, k) * self._get_D(i, j, k, k, j, i) / mean_T
         return ret
 
-    @property
-    def Sigma_KLD(self):
-        ret = 0
-        for i in range(self.n_observed):
-            for j in range(self.n_observed):
-                if j != i:
-                    for k in range(self.n_observed):
-                        if k != i and k != j:
-                            pass
-        return ret
-
-    def get_real_wtd(self, i, j):
-        t = sympy.symbols('t')
-        w_tmp = self.w.copy()
-        np.fill_diagonal(w_tmp, 0)
-        return (w_tmp * np.exp(-t / np.sum(w_tmp, axis=0)))[j, i]
-
-    @staticmethod
-    def L(f):
-        t, s = sympy.symbols('t, s')
-        return sympy.laplace_transform(f, t, s, noconds=True)
-
-    @staticmethod
-    def invL(F):
-        t, s = sympy.symbols('t, s')
-        return sympy.inverse_laplace_transform(F, s, t, noconds=True)
-
     def _get_n_IJK(self, i, j, k):
         """
 
@@ -614,42 +722,14 @@ class Trajectory(list):
         :param k: third state
         :return:
         """
-        w_est, p_est = self.estimate_from_statistics()
-        n_est = w_est.T*p_est
-        return n_est[i, j]*self._get_p_ij_to_jk(i, j, k)
+        # w_est, p_est = self.estimate_from_statistics()
+        # n_est = w_est.T*p_est
+        # return n_est[i, j]*self._get_p_ij_to_jk(i, j, k)
+        return len(self._time_matrix[i, j, k])/self.total_time
 
-    def observed_wtd_laplace_transform(self, H):
-        states = [i for i in range(self.n)]
-        inv_matrix = lambda s: np.linalg.inv(np.eye(self.n) - self.real_wtd_laplace_transform(s))
-        for i in range(self.n - 1):
-            for j in range(i + 1, self.n):
-                other_states = list(set(states) - {i, j})
-                for k in range(self.n - 3):
-                    K = other_states[k]
-                    for l in range(k, self.n - 2):
-                        L = other_states[l]
-                        # ret +=
+    def _get_n_matrix(self):
+        return self._jump_counter.T/self.total_time
 
-    def real_wtd_laplace_transform(self, s):
-        real_wtd_laplace = np.zeros((self.n, self.n))
-        for i in range(self.n):
-            for j in range(self.n):
-                real_wtd_laplace[j, i] = quad(lambda t: self.real_waiting_time_distribution(t)[j, i]*np.exp(-s*t), a=0, b=np.inf)
-        return real_wtd_laplace
-
-    def real_waiting_time_distribution(self, t):
-        w_tmp = self.w.copy()
-        np.fill_diagonal(w_tmp, 0)
-        wtd = w_tmp*np.exp(-t/np.sum(w_tmp, axis=0))
-        return wtd
-
-    def observed_waiting_time_distribution(self, t):
-        real_wtd_laplace = np.empty((self.n, self.n), dtype=object)
-        observed_wtd_laplace = self.observed_wtd_laplace_transform()
-        for i in range(self.n):
-            for j in range(self.n):
-                real_wtd_laplace[j, i] = quad(lambda s: observed_wtd_laplace(s)[j, i] * np.exp(s * t), a=0, b=np.inf)
-        return real_wtd_laplace
 
 class State:
     _index = None
@@ -680,3 +760,73 @@ class State:
         :return:
         """
         self._t = self.t+t
+
+
+class TrajectorySigma2:
+    _real_to_observed = None
+    _N = None
+    _w = None
+    _steady_state = None
+    _trj = None
+    _waiting_times = None
+    _t = None
+
+    def __init__(self, real_to_observed, w, N, initial_state=0):
+        self._real_to_observed = real_to_observed
+        self._w = w
+        self._N = N
+
+        self._trj = np.zeros(N, dtype=int)
+        self._trj[0] = initial_state
+        self._waiting_times = np.zeros(N)
+        self._waiting_times[0] = np.random.exponential(-1 / w[self._trj[0], self._trj[0]])
+
+        w_tmp = w.copy()
+        np.fill_diagonal(w_tmp, 0)
+        jump_probabilities = w_tmp/w_tmp.sum(axis=0, keepdims=True)
+        n_states = w.shape[0]
+
+        print('start trajectory')
+
+        for i in range(N-1):
+            if np.log10(i+1) % 1 == 0:
+                print(i+1)
+            self._trj[i+1] = np.random.choice(n_states, p=jump_probabilities[:, self._trj[i]])
+            self._waiting_times[i+1] = np.random.exponential(-1 / w[self._trj[i+1], self._trj[i+1]])
+
+        print('end trajectory')
+
+        self._t = np.concatenate([[0], np.cumsum(self._waiting_times)])
+
+    def get_sigma2_stats(self):
+        observed_states = list(set(self._real_to_observed.values()))
+        n_observed = len(observed_states)
+
+        # Observed states
+        observed_trj = np.zeros(self._trj.shape) #np.array([self._real_to_observed[state] for state in self._trj])
+        for key, value in self._real_to_observed.items():
+            observed_trj[self._trj == key] = value
+
+        # Removing repeating states
+        not_repeat_mask = (observed_trj[:-1] != observed_trj[1:])
+        not_repeat_mask = np.concatenate([[True], not_repeat_mask])
+        observed_trj = observed_trj[not_repeat_mask]
+
+        T = self._t[-1]
+
+        # I -> J stats
+        IJ_stats = np.zeros(2*(n_observed,))
+        for I in observed_states:
+            for J in observed_states:
+                if J != I:
+                    IJ_stats[I, J] = np.sum((observed_trj[:-1] == I) & (observed_trj[1:] == J)) / T
+
+        # I -> J -> K stats
+        IJK_stats = np.zeros(3*(n_observed,))
+        for I in observed_states:
+            for J in observed_states:
+                if J != I:
+                    for K in observed_states:
+                        if K != I and K != J:
+                            IJK_stats[I, J, K] = np.sum((observed_trj[:-2] == I) & (observed_trj[1:-1] == J) & (observed_trj[2:] == K)) / T
+        return IJ_stats, IJK_stats
