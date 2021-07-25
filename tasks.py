@@ -521,7 +521,7 @@ def dunkel_example():
     lamda = 1
     r = 0.05
 
-    N = 10 ** 7
+    N = 10 ** 6
 
     # real_to_observed = {0: 0,
     #                     1: 1,
@@ -544,6 +544,7 @@ def dunkel_example():
     total_list = []
     # kld_list = []
     sigma2_list = []
+    ips_list = []
     for p in p_list:
         print(p)
         p1 = p
@@ -570,27 +571,30 @@ def dunkel_example():
         w = np.array(w, dtype=float)
         # print(w)
         model = Model(real_to_observed=real_to_observed, w=w, dt=0.0001)
-        # model.sample_trajectory(N)
+        model.sample_trajectory(N)
         #
+        ips_list.append(model.trajectory.Sigma_aff)
         total_list.append(model.steady_state_Sigma)
         # # kld_list.append(model.get_Sigma_KLD())
         #
-        # # ijk_dict = get_Sigma2_stats_from_trajectory(model.trajectory)
+        ijk_dict = get_Sigma2_stats_from_trajectory(model.trajectory)
         # ijk_dict = get_Sigma2_stats_from_model(model)
-        trj = TrajectorySigma2(real_to_observed, w, N)
-        ijk_dict = get_Sigma2_stats_from_trajectory_sigma2(trj)
+        # trj = TrajectorySigma2(real_to_observed, w, N)
+        # ijk_dict = get_Sigma2_stats_from_trajectory_sigma2(trj)
         print(ijk_dict)
         sigma2 = 0
         for ijk, ijk_stats in ijk_dict.items():
             sigma2 += calc_Sigma2(**ijk_stats)/2.0
         sigma2_list.append(sigma2)
-        print(total_list[-1], ' - ', sigma2_list[-1])
+        print(total_list[-1], ' - ', sigma2_list[-1], ' - ', ips_list[-1])
 
     print('total - ', total_list)
     print('sigma2 - ', sigma2_list)
+    print('informed - ', ips_list)
     plt.plot(p_list, total_list, label='Total')
     # plt.plot(p_list, kld_list, label='KLD')
     plt.plot(p_list, sigma2_list, label='Sigma2')
+    plt.plot(p_list, ips_list, label='Informed')
     plt.legend()
     plt.show()
 
@@ -625,8 +629,8 @@ if __name__ == '__main__':
     # task2()
     # task3()
     # main()
-    task4()
-    # dunkel_example()
+    # task4()
+    dunkel_example()
     # save_dunkel_stats()
     # real_to_observed = {0: 0,
     #                     1: 1,
