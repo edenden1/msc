@@ -82,28 +82,57 @@ def plot_Sigma3(real_to_observed, w):
 
 
 def plot_dunkel():
-    pps_list = [1.00196127014177, 0.452435294599866, 0.0396826503472705, 4.11814583773196e-07, 0.238340479269024, 2.16209063034565, 7.5012876279282, 16.4467696812019, 26.4274326150279]
-    ips_list = [1.82243849911687, 0.805706287016173, 0.0696701901928799, 7.22232770092437e-07, 0.419813358949541, 3.87743978806599, 13.7386160984984, 30.6515988464724, 49.8919603932346]
-    Sigma_list = [208.369826042737, 205.108904691876, 199.350857466418, 196.585390199776, 189.04154524386, 170.92808364218, 144.858509130704, 120.971535599399, 110.543562133818]
+    # pps_list = [1.00196127014177, 0.452435294599866, 0.0396826503472705, 4.11814583773196e-07, 0.238340479269024, 2.16209063034565, 7.5012876279282, 16.4467696812019, 26.4274326150279]
+    # ips_list = [1.82243849911687, 0.805706287016173, 0.0696701901928799, 7.22232770092437e-07, 0.419813358949541, 3.87743978806599, 13.7386160984984, 30.6515988464724, 49.8919603932346]
+    # Sigma_list = [208.369826042737, 205.108904691876, 199.350857466418, 196.585390199776, 189.04154524386, 170.92808364218, 144.858509130704, 120.971535599399, 110.543562133818]
     Sigma_KLD_list = [1.91614527103623, 0.921161364260633, 0.233793282750832, 0.190248633152876, 0.687236608542188, 4.35390718665019, 14.5632862960081, 31.8716590274228, 51.3995346687822]
     Sigma2_list = []
+
+    pps_list = []
+    ips_list = []
+    Sigma_list = []
+
+    real_to_observed = {0: 0,
+                        1: 1,
+                        2: 2,
+                        3: 2
+                        }
+
+    w = np.array([[-11, 2, 0, 1],
+                  [3, -52.2, 2, 35],
+                  [0, 50, -77, 0.7],
+                  [8, 0.2, 75, -36.7]], dtype=float)
+
+    x_list = np.linspace(-3, 5, 1000)
+
+    for x in x_list:
+        w_tmp = w.copy()
+        np.fill_diagonal(w_tmp, 0)
+        w_tmp[0, 1] = w[0, 1] * np.exp(x)
+        w_tmp[1, 0] = w[1, 0] * np.exp(-x)
+        np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
+        model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
+        pps_list.append(model_tmp.passive_partial_Sigma)
+        ips_list.append(model_tmp.informed_partial_Sigma)
+        Sigma_list.append(model_tmp.steady_state_Sigma)
+
+    plt.plot(x_list, pps_list, label='Passive', )
+    plt.plot(x_list, ips_list, label='Informed')
+    plt.plot(x_list, Sigma_list, label='Total')
 
     x_list = np.sort([x for x in range(-3, 5)] + [-0.67])
 
     for x in x_list:
         # print(x)
-        with open(f'stats\stats5_{x}.json', 'r') as jsonFile:
+        with open(f'stats\stats2_{x}.json', 'r') as jsonFile:
             ijk_dict = json.load(jsonFile)
         ep = 0
         for ijk_stats in ijk_dict.values():
             ep += calc_Sigma2(**ijk_stats)/2.0
         Sigma2_list.append(ep)
     print(Sigma2_list)
-    plt.plot(x_list, pps_list, label='Passive')
-    plt.plot(x_list, ips_list, label='Informed')
-    plt.plot(x_list, Sigma_list, label='Total')
-    plt.plot(x_list, Sigma_KLD_list, label='KLD')
-    plt.plot(x_list, Sigma2_list, label='Sigma2')
+    plt.scatter(x_list, Sigma_KLD_list, label='KLD', marker='*', color='r')
+    plt.scatter(x_list, Sigma2_list, label='Sigma2', color='purple')
     plt.legend()
     plt.xlabel('x')
     plt.yscale('log')
