@@ -96,6 +96,10 @@ class Model:
         # return np.sum(np.multiply(self.steady_state_J, np.log(w_mul_p_st_T)))
         return (self.steady_state_J[0, 1] * np.log(self.w[0, 1] * self.steady_state_stalling[1] / (self.w[1, 0] * self.steady_state_stalling[0])))[0]
 
+    @property
+    def stalling_force(self):
+        return 0.5*np.log(self.w[1, 0] * self.steady_state_stalling[0] / (self.w[0, 1] * self.steady_state_stalling[1]))[0]
+
     def __init__(self, real_to_observed, w=None, dt=0.001):
         """
 
@@ -513,6 +517,8 @@ class Trajectory(list):
         :param initial_state_index: The index of the initial state
         """
         super().__init__()
+        if (w.sum(axis=0) == 0).all():
+            print('Not all the columns summed 0')
         self._w = w.copy()
         self._steady_state = steady_state
         self._real_to_observed = real_to_observed
