@@ -115,10 +115,12 @@ class Model:
             if w.shape[0] != w.shape[1]:
                 raise Exception('w must be square')
             else:
-                self._w = w
+                self._w = w.copy()
+                if (w.sum(axis=0) != 0).any():
+                    np.fill_diagonal(self._w, 0)
+                    np.fill_diagonal(self._w, (-np.sum(self._w, axis=0)).tolist())
         else:
             self._w = self._initialize_w()
-
 
         self._dt = dt
         self._cache = {}
@@ -517,8 +519,6 @@ class Trajectory(list):
         :param initial_state_index: The index of the initial state
         """
         super().__init__()
-        if (w.sum(axis=0) == 0).all():
-            print('Not all the columns summed 0')
         self._w = w.copy()
         self._steady_state = steady_state
         self._real_to_observed = real_to_observed
