@@ -86,12 +86,13 @@ def plot_dunkel():
     # ips_list = [1.82243849911687, 0.805706287016173, 0.0696701901928799, 7.22232770092437e-07, 0.419813358949541, 3.87743978806599, 13.7386160984984, 30.6515988464724, 49.8919603932346]
     # Sigma_list = [208.369826042737, 205.108904691876, 199.350857466418, 196.585390199776, 189.04154524386, 170.92808364218, 144.858509130704, 120.971535599399, 110.543562133818]
     # Sigma_KLD_list = [1.91614527103623, 0.921161364260633, 0.233793282750832, 0.190248633152876, 0.687236608542188, 4.35390718665019, 14.5632862960081, 31.8716590274228, 51.3995346687822]
-    # Sigma2_list = []
     pps_list = []
     ips_list = []
+    Sigma_KLD_list = []
     Sigma_list = []
     Sigma2_list = []
-    x_list = np.sort([x for x in range(-3, 5)] + [-0.67])
+    # x_list = np.sort([x for x in range(-3, 5)] + [-0.67])
+    # x_list = np.arange(-3, 5)
 
     real_to_observed = {0: 0,
                         1: 1,
@@ -99,41 +100,81 @@ def plot_dunkel():
                         3: 2
                         }
 
-    w = np.array([[-11, 2, 0, 1],
-                  [3, -52.2, 2, 35],
-                  [0, 50, -77, 0.7],
-                  [8, 0.2, 75, -36.7]], dtype=float)
+    # w = np.array([[-11, 2, 0, 1],
+    #               [3, -52.2, 2, 35],
+    #               [0, 50, -77, 0.7],
+    #               [8, 0.2, 75, -36.7]], dtype=float)
+
+    w = np.array([[0, 2, 1, 8],
+                  [3, 0, 8, 1],
+                  [8, 1, 0, 2],
+                  [1, 8, 2, 0]], dtype=float)
+
+    model = Model(real_to_observed, w, dt=0.0001)
+    first_x = int(model.stalling_force) - 3
+    last_x = int(model.stalling_force) + 3
+    x_list = np.arange(first_x, last_x + 1)
+    x_list = np.sort(np.append(x_list, np.round(model.stalling_force, decimals=2)))
+
+    N = 10**6
 
     for x in x_list:
-        # print(x)
+        print(x)
         w_tmp = w.copy()
-        np.fill_diagonal(w_tmp, 0)
+        # np.fill_diagonal(w_tmp, 0)
         w_tmp[0, 1] = w[0, 1] * np.exp(x)
         w_tmp[1, 0] = w[1, 0] * np.exp(-x)
-        lamda_arr = np.sum(w_tmp, axis=0)
-        np.fill_diagonal(w_tmp, (-lamda_arr).tolist())
-        w_tmp /= lamda_arr
-        # np.fill_diagonal(w_tmp, (-np.sum(w_tmp, axis=0)).tolist())
-        model_tmp = Model(real_to_observed, w=w_tmp)
+
+        # lamda_arr = np.sum(w_tmp, axis=0)
+        # np.fill_diagonal(w_tmp, (-lamda_arr).tolist())
+        # w_tmp /= lamda_arr
+
+        model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
+        model_tmp.sample_trajectory(N)
+        trj = model_tmp.trajectory
+
         pps_list.append(model_tmp.passive_partial_Sigma)
         ips_list.append(model_tmp.informed_partial_Sigma)
         Sigma_list.append(model_tmp.steady_state_Sigma)
+        Sigma_KLD_list.append(trj.Sigma_aff + trj.Sigma_WTD)
         # ijk_dict = get_Sigma2_stats_from_model(model_tmp)
 
-        with open(f'stats\stats9_{x}.json', 'r') as jsonFile:
-            ijk_dict = json.load(jsonFile)
+        # with open(f'stats\stats9_{x}.json', 'r') as jsonFile:
+        #     ijk_dict = json.load(jsonFile)
+        # trj = TrajectorySigma2(real_to_observed, w_tmp, N)
+        # ijk_dict = get_Sigma2_stats_from_trajectory_sigma2(trj)
+        ijk_dict = get_Sigma2_stats_from_trajectory(trj)
+
         ep = 0
         for ijk_stats in ijk_dict.values():
             ep += calc_Sigma2(**ijk_stats)/2.0
         Sigma2_list.append(ep)
-    print(Sigma_list)
-    print(Sigma2_list)
-    print(ips_list)
-    plt.plot(x_list, pps_list, label='Passive')
-    plt.plot(x_list, ips_list, label='Informed')
-    plt.plot(x_list, Sigma_list, label='Total')
-    # plt.plot(x_list, Sigma_KLD_list, label='KLD')
-    plt.plot(x_list, Sigma2_list, label='Sigma2')
+
+    print(f'x - {x_list}')
+    print(f'Sigma - {Sigma_list}')
+    print(f'KLD - {Sigma_KLD_list}')
+    print(f'Sigma2 - {Sigma2_list}')
+    print(f'Informed - {ips_list}')
+
+    pps_list = []
+    ips_list = []
+    Sigma_list = []
+    for x in np.linspace(first_x, last_x, 100):
+        w_tmp = w.copy()
+        w_tmp[0, 1] = w[0, 1] * np.exp(x)
+        w_tmp[1, 0] = w[1, 0] * np.exp(-x)
+
+        model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
+        pps_list.append(model_tmp.passive_partial_Sigma)
+        ips_list.append(model_tmp.informed_partial_Sigma)
+        Sigma_list.append(model_tmp.steady_state_Sigma)
+
+
+    plt.plot(np.linspace(first_x, last_x, 100), pps_list, label='Passive', c='b')
+    plt.plot(np.linspace(first_x, last_x, 100), ips_list, label='Informed', c='g')
+    plt.plot(np.linspace(first_x, last_x, 100), Sigma_list, label='Total', c='y')
+    plt.scatter(x_list, Sigma_KLD_list, label='KLD', marker='x', c='r')
+    plt.scatter(x_list, Sigma2_list, label='Sigma2', marker='o', c='c')
     plt.legend()
     plt.xlabel('x')
     plt.yscale('log')
@@ -409,7 +450,7 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
             {'type': 'ineq', 'fun': lambda x: n_JK - np.sum(x[8:])}
             ] + [{'type': 'ineq', 'fun': lambda x: x[i] - x[4 + i] + x[8 + i]} for i in range(4)]
     bnds = 4 * [(0, n_JI)] + 4 * [(0, n_IJ)] + 4 * [(0, n_JK)]
-    con_tol = 1e-6
+    con_tol = 1e-8
     res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
                    options={'maxiter': 1e4, 'ftol': 1e-7}, bounds=bnds,
                    constraints=cons, tol=con_tol)
@@ -417,7 +458,7 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
     ep = entropy_production(res.x)
     if ep > 0:
         ep_min = ep
-    while res.status != 0 and con_tol < 1:
+    while res.status != 0 and con_tol < 1e-2:
         con_tol *= 4
         res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
                        options={'maxiter': 1e4, 'ftol': 1e-5}, bounds=bnds,
@@ -629,8 +670,8 @@ if __name__ == '__main__':
     # task2()
     # task3()
     # main()
-    # task4()
-    dunkel_example()
+    task4()
+    # dunkel_example()
     # save_dunkel_stats()
     # real_to_observed = {0: 0,
     #                     1: 1,

@@ -100,7 +100,7 @@ class Model:
     def stalling_force(self):
         return 0.5*np.log(self.w[1, 0] * self.steady_state_stalling[0] / (self.w[0, 1] * self.steady_state_stalling[1]))[0]
 
-    def __init__(self, real_to_observed, w=None, dt=0.001):
+    def __init__(self, real_to_observed, w=None, dt=0.0001):
         """
 
         :param real_to_observed: A dictionary with the real state as key and the observed state as value
