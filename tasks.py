@@ -105,10 +105,10 @@ def plot_dunkel():
     #               [0, 50, -77, 0.7],
     #               [8, 0.2, 75, -36.7]], dtype=float)
 
-    w = np.array([[0, 2, 1, 8],
-                  [3, 0, 8, 1],
-                  [8, 1, 0, 2],
-                  [1, 8, 2, 0]], dtype=float)
+    w = np.array([[0, 2, 1, 12],
+                  [3, 0, 12, 1],
+                  [12, 1, 0, 0.5],
+                  [1, 12, 0.5, 0]], dtype=float)
 
     model = Model(real_to_observed, w, dt=0.0001)
     print(model.n_matrix)
@@ -164,7 +164,8 @@ def plot_dunkel():
     pps_list = []
     ips_list = []
     Sigma_list = []
-    for x in np.linspace(first_x, last_x, 100):
+    x_list_analytic = np.append(np.linspace(first_x, last_x, 100), np.round(model.stalling_force, decimals=2))
+    for x in x_list_analytic:
         w_tmp = w.copy()
         w_tmp[0, 1] = w[0, 1] * np.exp(x)
         w_tmp[1, 0] = w[1, 0] * np.exp(-x)
@@ -175,9 +176,9 @@ def plot_dunkel():
         Sigma_list.append(model_tmp.steady_state_Sigma)
 
 
-    plt.plot(np.linspace(first_x, last_x, 100), pps_list, label='Passive', c='b')
-    plt.plot(np.linspace(first_x, last_x, 100), ips_list, label='Informed', c='g')
-    plt.plot(np.linspace(first_x, last_x, 100), Sigma_list, label='Total', c='y')
+    plt.plot(x_list_analytic, pps_list, label='Passive', c='b')
+    plt.plot(x_list_analytic, ips_list, label='Informed', c='g')
+    plt.plot(x_list_analytic, Sigma_list, label='Total', c='y')
     plt.scatter(x_list, Sigma_KLD_list, label='KLD', marker='x', c='r')
     plt.scatter(x_list, Sigma2_list, label='Sigma2', marker='o', c='c')
     plt.legend()
@@ -500,7 +501,7 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
     ep = entropy_production(res.x)
     if ep > 0:
         ep_min = ep
-    while res.status != 0 and con_tol < 1e-2:
+    while res.status != 0 and con_tol < 1e-3:
         con_tol *= 4
         res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
                        options={'maxiter': 1e4, 'ftol': 1e-5}, bounds=bnds,
