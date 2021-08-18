@@ -111,6 +111,8 @@ def plot_dunkel():
                   [1, 8, 2, 0]], dtype=float)
 
     model = Model(real_to_observed, w, dt=0.0001)
+    print(model.n_matrix)
+    print(model.n_matrix_observed)
     first_x = int(model.stalling_force) - 3
     last_x = int(model.stalling_force) + 3
     x_list = np.arange(first_x, last_x + 1)
@@ -144,6 +146,9 @@ def plot_dunkel():
         # trj = TrajectorySigma2(real_to_observed, w_tmp, N)
         # ijk_dict = get_Sigma2_stats_from_trajectory_sigma2(trj)
         ijk_dict = get_Sigma2_stats_from_trajectory(trj)
+        print(ijk_dict)
+        ijk_dict = get_Sigma2_stats_gili_system(model_tmp)
+        print(ijk_dict)
 
         ep = 0
         for ijk_stats in ijk_dict.values():
@@ -417,6 +422,43 @@ def get_Sigma2_stats_from_model(model):
                                               )
     return ijk_dict
 
+def get_Sigma2_stats_gili_system(model):
+    n_mat_obs = model.n_matrix_observed
+    n_mat = model.n_matrix
+    cutoff = 1e-10
+
+    p_ij = lambda i, j: model.get_p_ij(i, j)
+
+    ijk_dict = {}
+
+    ijk_dict['012'] = dict(n_JI=max(cutoff, n_mat_obs[1, 0]),
+                           n_IJ=max(cutoff, n_mat_obs[0, 1]),
+                           n_JK=max(cutoff, n_mat_obs[1, 2]),
+                           n_IJK=max(cutoff, n_mat_obs[0, 1]*(p_ij(1,2) + p_ij(1,3))),
+                           n_KJI=max(cutoff, n_mat_obs[2, 1]*p_ij(1, 0))
+                           )
+
+    ijk_dict['102'] = dict(n_JI=max(cutoff, n_mat_obs[0, 1]),
+                           n_IJ=max(cutoff, n_mat_obs[1, 0]),
+                           n_JK=max(cutoff, n_mat_obs[0, 2]),
+                           n_IJK=max(cutoff, n_mat_obs[1, 0] * (p_ij(0, 2) + p_ij(0,3))),
+                           n_KJI=max(cutoff, n_mat_obs[2, 0] * p_ij(0, 1))
+                           )
+
+    # n_1H2
+    n_021 = (n_mat[0,2]*(p_ij(2,1) + p_ij(2,3)*p_ij(3,1)) + n_mat[0,3]*(p_ij(3,1) + p_ij(3,2)*p_ij(2,1))) / (1 - p_ij(2,3)*p_ij(3,2))
+
+    #n_2H1
+    n_120 = (n_mat[1,2]*(p_ij(2,0) + p_ij(2,3)*p_ij(3,0)) + n_mat[1,3]*(p_ij(3,0) + p_ij(3,2)*p_ij(2,0))) / (1 - p_ij(2,3)*p_ij(3,2))
+
+    ijk_dict['021'] = dict(n_JI=max(cutoff, n_mat_obs[2, 0]),
+                           n_IJ=max(cutoff, n_mat_obs[0, 2]),
+                           n_JK=max(cutoff, n_mat_obs[2, 1]),
+                           n_IJK=max(cutoff, n_021),
+                           n_KJI=max(cutoff, n_120)
+                           )
+
+    return ijk_dict
 
 def save_statistics(trj, name):
     ijk_dict = get_Sigma2_stats_from_trajectory(trj)
