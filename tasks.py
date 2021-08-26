@@ -5,7 +5,7 @@ import os
 import pickle
 from scipy.optimize import minimize
 import json
-
+import sympy
 
 def plot_Sigma2(w):
     """
@@ -423,6 +423,7 @@ def get_Sigma2_stats_from_model(model):
                                               )
     return ijk_dict
 
+
 def get_Sigma2_stats_gili_system(model):
     n_mat_obs = model.n_matrix_observed
     n_mat = model.n_matrix
@@ -461,6 +462,72 @@ def get_Sigma2_stats_gili_system(model):
 
     return ijk_dict
 
+
+def get_Sigma_KLD_gili_system(model):
+    # t = sympy.symbols('t', positive=True)
+    # s = sympy.symbols('s')
+    from scipy.integrate import quad
+    import mpmath
+    # mpmath.mp.pretty = True
+    # mpmath.mp.dps = 15
+
+    p_ij = lambda i, j: model.get_p_ij(i, j)
+    total_mass_rate = np.sum(model.n_matrix_observed) - np.sum(np.diagonal(model.n_matrix_observed))
+    R_ij = lambda i, j: model.n_matrix_observed[i, j]/total_mass_rate
+
+    # p_1H2
+    p_02_to_21 = (p_ij(0,2)*(p_ij(2,1) + p_ij(2,3)*p_ij(3,1)) + p_ij(0,3)*(p_ij(3,1) + p_ij(3,2)*p_ij(2,1))) / (1 - p_ij(2,3)*p_ij(3,2)) / (p_ij(0,2)+p_ij(0,3))
+    p_021 = R_ij(0, 2) * p_02_to_21
+
+    # p_2H1
+    p_12_to_20 = (p_ij(1,2)*(p_ij(2,0) + p_ij(2,3)*p_ij(3,0)) + p_ij(1,3)*(p_ij(3,0) + p_ij(3,2)*p_ij(2,0))) / (1 - p_ij(2,3)*p_ij(3,2)) / (p_ij(1,2)+p_ij(1,3))
+    p_120 = R_ij(1, 2) * p_12_to_20
+
+    w = model.w
+    lamda = -np.diagonal(w)
+
+    # f_WTD_1H2
+    WTD_021_laplace = lambda s: 1 / (s + lamda[0]) * 1 / (1 - w[2, 3] * w[3, 2] / ((s + lamda[2]) * (s + lamda[3]))) * (w[2, 0] / (s + lamda[2]) * (w[1, 2] + w[1, 3] * w[3, 2] / (s + lamda[3])) + w[3, 0] / (s + lamda[3]) * (w[1, 3] + w[1, 2] * w[2, 3] / (s + lamda[2])))
+    WTD_021 = lambda t: float(mpmath.invertlaplace(WTD_021_laplace, t))#lambda t: quad(lambda s: WTD_021_laplace*np.exp(s*t), -np.inf, np.inf)
+    # WTD_021 = sympy.inverse_laplace_transform(WTD_021_laplace, s, t, noconds=True)
+    # f_WTD_021 = lambda x: WTD_021.evalf(subs={'t': x})
+
+    # f_WTD_2H1
+    WTD_120_laplace = lambda s: 1 / (s + lamda[1]) * 1 / (1 - w[2, 3] * w[3, 2] / ((s + lamda[2]) * (s + lamda[3]))) * (w[2, 1] / (s + lamda[2]) * (w[0, 2] + w[0, 3] * w[3, 2] / (s + lamda[3])) + w[3, 1] / (s + lamda[3]) * (w[0, 3] + w[0, 2] * w[2, 3] / (s + lamda[2])))
+    WTD_120 = lambda t: float(mpmath.invertlaplace(WTD_120_laplace, t))
+    # WTD_120 = sympy.inverse_laplace_transform(WTD_120_laplace, s, t, noconds=True)
+    # f_WTD_120 = lambda x: WTD_021.evalf(subs={'t': x})
+
+    # T = 10.0 / np.min(lamda)
+    # t_arr = np.linspace(1e-10, T, 5000)
+    # print('start1')
+    # kde_1 = np.array([WTD_021(t) for t in t_arr])
+    # print('end1')
+    # print('start2')
+    # kde_2 = np.array([WTD_120(t) for t in t_arr])
+    # print('end2')
+    # tmp_021 = np.divide(kde_1, kde_2, out=np.ones_like(kde_2), where=(kde_2 > 1e-10))
+    # return np.sum((t_arr[1] - t_arr[0]) * np.multiply(kde_1-kde_2, np.log(tmp_021, out=np.zeros_like(kde_1), where=(kde_1 > 1e-10))))
+    _tol = 1e-10
+    return p_021*quad(lambda t: WTD_021(t)*np.log((WTD_021(t)+_tol)/(WTD_120(t)+_tol)), 0, np.inf)[0]\
+           + p_120*quad(lambda t: WTD_120(t)*np.log((WTD_120(t)+_tol)/(WTD_021(t)+_tol)), 0, np.inf)[0]
+    # return p_021*sympy.integrate(WTD_021*sympy.log(WTD_021/WTD_120), (t, 0, sympy.oo)) + p_120*sympy.integrate(WTD_120*sympy.log(WTD_120/WTD_021), (t, 0, sympy.oo))
+def check_KLD():
+    real_to_observed = {0: 0,
+                        1: 1,
+                        2: 2,
+                        3: 2
+                        }
+    w = np.array([[0, 2, 0, 1],
+                  [3, 0, 2, 35],
+                  [0, 50, 0, 0.7],
+                  [8, 0.2, 75, 0]], dtype=float)
+    model = Model(real_to_observed, w, dt=0.0001)
+    print(get_Sigma_KLD_gili_system(model))
+
+
+# WTD_021 = 8*(-0.0148613*sympy.exp(-78.2631*t) - 1.39136*sympy.exp(-35.4369*t) + 1.40622*sympy.exp(-11*t))
+# WTD_120 = 3.35943*sympy.exp(-78.2631*t) - 8.59455*sympy.exp(-52.2*t) + 5.23513*sympy.exp(-35.4369*t)
 def save_statistics(trj, name):
     ijk_dict = get_Sigma2_stats_from_trajectory(trj)
     with open(name, 'w') as jsonFile:
@@ -713,7 +780,8 @@ if __name__ == '__main__':
     # task2()
     # task3()
     # main()
-    task4()
+    # task4()
+    check_KLD()
     # dunkel_example()
     # save_dunkel_stats()
     # real_to_observed = {0: 0,
