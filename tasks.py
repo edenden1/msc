@@ -464,8 +464,6 @@ def get_Sigma2_stats_gili_system(model):
 
 
 def get_Sigma_KLD_gili_system(model):
-    # t = sympy.symbols('t', positive=True)
-    # s = sympy.symbols('s')
     from scipy.integrate import quad
     import mpmath
     # mpmath.mp.pretty = True
@@ -485,34 +483,60 @@ def get_Sigma_KLD_gili_system(model):
 
     w = model.w
     lamda = -np.diagonal(w)
+    tau = 1/lamda
+    ss = model.steady_state.flatten()
+    tau_H = (ss[2]*(tau[2]+p_ij(2,3)*tau[3]) + ss[3]*(tau[3]+p_ij(3,2)*tau[2])) / ((ss[2]+ss[3])*(1-p_ij(2,3)*p_ij(3,2)))
+    T = ss[0]*tau[0] + ss[1]*tau[1] + (ss[2]+ss[3])*tau_H
 
+    # First way -----------------------------------------------------------
     # f_WTD_1H2
-    WTD_021_laplace = lambda s: 1 / (s + lamda[0]) * 1 / (1 - w[2, 3] * w[3, 2] / ((s + lamda[2]) * (s + lamda[3]))) * (w[2, 0] / (s + lamda[2]) * (w[1, 2] + w[1, 3] * w[3, 2] / (s + lamda[3])) + w[3, 0] / (s + lamda[3]) * (w[1, 3] + w[1, 2] * w[2, 3] / (s + lamda[2])))
+    # WTD_021_laplace = lambda s: 1 / (s + lamda[0]) * 1 / (1 - w[2, 3] * w[3, 2] / ((s + lamda[2]) * (s + lamda[3]))) * (w[2, 0] / (s + lamda[2]) * (w[1, 2] + w[1, 3] * w[3, 2] / (s + lamda[3])) + w[3, 0] / (s + lamda[3]) * (w[1, 3] + w[1, 2] * w[2, 3] / (s + lamda[2])))
+    WTD_021_laplace = lambda s: 1 / ((s + lamda[0]) * ((s + lamda[2]) * (s + lamda[3]) - w[2, 3] * w[3, 2])) * (w[2, 0] * ((s + lamda[3]) * w[1, 2] + w[1, 3] * w[3, 2]) + w[3, 0] * ((s + lamda[2]) * w[1, 3] + w[1, 2] * w[2, 3]))
     WTD_021 = lambda t: float(mpmath.invertlaplace(WTD_021_laplace, t))#lambda t: quad(lambda s: WTD_021_laplace*np.exp(s*t), -np.inf, np.inf)
-    # WTD_021 = sympy.inverse_laplace_transform(WTD_021_laplace, s, t, noconds=True)
-    # f_WTD_021 = lambda x: WTD_021.evalf(subs={'t': x})
 
     # f_WTD_2H1
-    WTD_120_laplace = lambda s: 1 / (s + lamda[1]) * 1 / (1 - w[2, 3] * w[3, 2] / ((s + lamda[2]) * (s + lamda[3]))) * (w[2, 1] / (s + lamda[2]) * (w[0, 2] + w[0, 3] * w[3, 2] / (s + lamda[3])) + w[3, 1] / (s + lamda[3]) * (w[0, 3] + w[0, 2] * w[2, 3] / (s + lamda[2])))
+    # WTD_120_laplace = lambda s: 1 / (s + lamda[1]) * 1 / (1 - w[2, 3] * w[3, 2] / ((s + lamda[2]) * (s + lamda[3]))) * (w[2, 1] / (s + lamda[2]) * (w[0, 2] + w[0, 3] * w[3, 2] / (s + lamda[3])) + w[3, 1] / (s + lamda[3]) * (w[0, 3] + w[0, 2] * w[2, 3] / (s + lamda[2])))
+    WTD_120_laplace = lambda s: 1 / ((s + lamda[1]) * ((s + lamda[2]) * (s + lamda[3]) - w[2, 3] * w[3, 2])) * (w[2, 1] * ((s + lamda[3]) * w[0, 2] + w[0, 3] * w[3, 2]) + w[3, 1] * ((s + lamda[2]) * w[0, 3] + w[0, 2] * w[2, 3]))
     WTD_120 = lambda t: float(mpmath.invertlaplace(WTD_120_laplace, t))
-    # WTD_120 = sympy.inverse_laplace_transform(WTD_120_laplace, s, t, noconds=True)
-    # f_WTD_120 = lambda x: WTD_021.evalf(subs={'t': x})
-
-    # T = 10.0 / np.min(lamda)
-    # t_arr = np.linspace(1e-10, T, 5000)
-    # print('start1')
-    # kde_1 = np.array([WTD_021(t) for t in t_arr])
-    # print('end1')
-    # print('start2')
-    # kde_2 = np.array([WTD_120(t) for t in t_arr])
-    # print('end2')
-    # tmp_021 = np.divide(kde_1, kde_2, out=np.ones_like(kde_2), where=(kde_2 > 1e-10))
-    # return np.sum((t_arr[1] - t_arr[0]) * np.multiply(kde_1-kde_2, np.log(tmp_021, out=np.zeros_like(kde_1), where=(kde_1 > 1e-10))))
     _tol = 1e-10
-    return p_021*quad(lambda t: WTD_021(t)*np.log((WTD_021(t)+_tol)/(WTD_120(t)+_tol)), 0, np.inf)[0]\
-           + p_120*quad(lambda t: WTD_120(t)*np.log((WTD_120(t)+_tol)/(WTD_021(t)+_tol)), 0, np.inf)[0]
-    # return p_021*sympy.integrate(WTD_021*sympy.log(WTD_021/WTD_120), (t, 0, sympy.oo)) + p_120*sympy.integrate(WTD_120*sympy.log(WTD_120/WTD_021), (t, 0, sympy.oo))
-def check_KLD():
+
+    t_arr = np.linspace(1e-10, 0.2, 100)
+    y021_arr = list(map(lambda x: mpmath.invertlaplace(WTD_021_laplace, x), t_arr))
+    y120_arr = list(map(lambda x: mpmath.invertlaplace(WTD_120_laplace, x), t_arr))
+    plt.plot(t_arr, y021_arr, c='b', label='WTD 1->H->2')
+    plt.plot(t_arr, y120_arr, c='r', label='WTD 2->H->1')
+    plt.legend()
+    plt.show()
+    return quad(lambda t: (p_021 * WTD_021(t) - p_120 * WTD_120(t)) * np.log((WTD_021(t) + _tol) / (WTD_120(t) + _tol)), 0, np.inf)[0] / T + model.informed_partial_Sigma
+
+    # Second way ----------------------------------------------------------
+    # s = sympy.symbols('s')
+    # t = sympy.symbols('t', real=True, positive=True)
+    # w_01, w_02, w_03, w_10, w_12, w_13, w_20, w_21, w_23, w_30, w_31, w_32 = sympy.symbols('w_01, w_02, w_03, w_10, w_12, w_13, w_20, w_21, w_23, w_30, w_31, w_32', real=True, positice=True)
+    # lamda_0, lamda_1, lamda_2, lamda_3 = sympy.symbols('lamda_0, lamda_1, lamda_2, lamda_3', real=True, positice=True)
+    # subs_dict = {w_01: w[0,1], w_02: w[0,2], w_03: w[0,3], w_10: w[1,0], w_12: w[1,2], w_13: w[1,3], w_20: w[2,0], w_21: w[2,1], w_23: w[2,3], w_30: w[3,0], w_31: w[3,1], w_32: w[3,2]}
+    # subs_dict.update({lamda_0: lamda[0], lamda_1: lamda[1], lamda_2: lamda[2], lamda_3: lamda[3]})
+    # # W = sympy.MatrixSymbol('W', 4, 4)
+    # # Lamda = sympy.MatrixSymbol('Lamda', 1, 4)
+    # def invL(F):
+    #     return sympy.inverse_laplace_transform(F, s, t, noconds=True)
+    # # WTD_021_laplace = 1 / (s + lamda[0]) * 1 / (1 - w[2, 3] * w[3, 2] / ((s + lamda[2]) * (s + lamda[3]))) * (w[2, 0] / (s + lamda[2]) * (w[1, 2] + w[1, 3] * w[3, 2] / (s + lamda[3])) + w[3, 0] / (s + lamda[3]) * (w[1, 3] + w[1, 2] * w[2, 3] / (s + lamda[2])))
+    # # WTD_021_laplace = 1 / ((s + Lamda[0]) * ((s + Lamda[2]) * (s + Lamda[3]) - W[2, 3] * W[3, 2])) * (W[2, 0] * ((s + Lamda[3]) * W[1, 2] + W[1, 3] * W[3, 2]) + W[3, 0] * ((s + Lamda[2]) * W[1, 3] + W[1, 2] * W[2, 3]))
+    # print('1H2')
+    # WTD_021_laplace = 1 / ((s + lamda_0) * ((s + lamda_2) * (s + lamda_3) - w_23 * w_32)) * (w_20 * ((s + lamda_3) * w_12 + w_13 * w_32) + w_30 * ((s + lamda_2) * w_13 + w_12 * w_23))
+    # WTD_021_general = invL(WTD_021_laplace)
+    # WTD_021 = WTD_021_general.subs(subs_dict)
+    # # f_WTD_021 = lambda x: WTD_021.evalf(subs={'t': x})
+    # print('2H1')
+    # WTD_120_laplace = 1 / ((s + lamda_1) * ((s + lamda_2) * (s + lamda_3) - w_23 * w_32)) * (w_21 * ((s + lamda_3) * w_02 + w_03 * w_32) + w_31 * ((s + lamda_2) * w_03 + w_02 * w_23))
+    # WTD_120_general = invL(WTD_120_laplace)
+    # WTD_120 = WTD_120_general.subs(subs_dict)
+    # # f_WTD_120 = lambda x: WTD_021.evalf(subs={'t': x})
+    # print('done')
+    # return sympy.integrate((p_021 * WTD_021 - p_120 * WTD_120) * sympy.log(WTD_021 / WTD_120), (t, 0, sympy.oo)) / T + model.informed_partial_Sigma
+
+
+def check_KLD(x):
     real_to_observed = {0: 0,
                         1: 1,
                         2: 2,
@@ -522,6 +546,8 @@ def check_KLD():
                   [3, 0, 2, 35],
                   [0, 50, 0, 0.7],
                   [8, 0.2, 75, 0]], dtype=float)
+    w[0, 1] *= np.exp(x)
+    w[1, 0] *= np.exp(-x)
     model = Model(real_to_observed, w, dt=0.0001)
     print(get_Sigma_KLD_gili_system(model))
 
@@ -781,7 +807,7 @@ if __name__ == '__main__':
     # task3()
     # main()
     # task4()
-    check_KLD()
+    check_KLD(-0.67)
     # dunkel_example()
     # save_dunkel_stats()
     # real_to_observed = {0: 0,
