@@ -105,10 +105,10 @@ def plot_dunkel():
     #               [0, 50, -77, 0.7],
     #               [8, 0.2, 75, -36.7]], dtype=float)
 
-    w = np.array([[0, 2, 1, 12],
-                  [3, 0, 12, 1],
-                  [12, 1, 0, 0.5],
-                  [1, 12, 0.5, 0]], dtype=float)
+    w = np.array([[0, 2, 1, 8],
+                  [3, 0, 8, 1],
+                  [8, 1, 0, 10],
+                  [1, 8, 5, 0]], dtype=float)
 
     model = Model(real_to_observed, w, dt=0.0001)
     print(model.n_matrix)
@@ -164,7 +164,7 @@ def plot_dunkel():
     pps_list = []
     ips_list = []
     Sigma_list = []
-    x_list_analytic = np.append(np.linspace(first_x, last_x, 100), np.round(model.stalling_force, decimals=2))
+    x_list_analytic = np.sort(np.append(np.linspace(first_x, last_x, 100), np.round(model.stalling_force, decimals=2)))
     for x in x_list_analytic:
         w_tmp = w.copy()
         w_tmp[0, 1] = w[0, 1] * np.exp(x)
@@ -306,6 +306,106 @@ def task4():
 
     plot_dunkel()
 
+def task5():
+    """
+    Check
+
+    :return:
+    """
+
+    pps_list = []
+    ips_list = []
+    Sigma_list = []
+    Sigma_KLD_list = []
+    Sigma2_list = []
+
+    real_to_observed = {0: 0,
+                        1: 1,
+                        2: 2,
+                        3: 2
+                        }
+
+    w = np.array([[0, 2, 1, 8],
+                  [3, 0, 8, 1],
+                  [8, 1, 0, 5],
+                  [1, 8, 5, 0]], dtype=float)
+
+    model = Model(real_to_observed, w, dt=0.0001)
+    print(model.n_matrix)
+    print(model.n_matrix_observed)
+
+    # x_stall = np.round(model.stalling_force, decimals=2)
+    # w[0, 1] *= np.exp(x_stall)
+    # w[1, 0] *= np.exp(-x_stall)
+
+    N = 10**6
+
+    x_list = np.linspace(0, 1, 8)
+    for x in x_list:
+        print(x)
+        w_tmp = w.copy()
+        # np.fill_diagonal(w_tmp, 0)
+        w_tmp[0, 2] = w[0, 2] * x
+        w_tmp[2, 0] = w[2, 0] * x
+
+        # lamda_arr = np.sum(w_tmp, axis=0)
+        # np.fill_diagonal(w_tmp, (-lamda_arr).tolist())
+        # w_tmp /= lamda_arr
+
+        model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
+        model_tmp.sample_trajectory(N)
+        trj = model_tmp.trajectory
+
+        pps_list.append(model_tmp.passive_partial_Sigma)
+        ips_list.append(model_tmp.informed_partial_Sigma)
+        Sigma_list.append(model_tmp.steady_state_Sigma)
+        Sigma_KLD_list.append(trj.Sigma_aff + trj.Sigma_WTD)
+        # ijk_dict = get_Sigma2_stats_from_model(model_tmp)
+
+        # with open(f'stats\stats9_{x}.json', 'r') as jsonFile:
+        #     ijk_dict = json.load(jsonFile)
+        # trj = TrajectorySigma2(real_to_observed, w_tmp, N)
+        # ijk_dict = get_Sigma2_stats_from_trajectory_sigma2(trj)
+        # ijk_dict = get_Sigma2_stats_from_trajectory(trj)
+        # print(ijk_dict)
+        ijk_dict = get_Sigma2_stats_gili_system(model_tmp)
+        # print(ijk_dict)
+
+        ep = 0
+        for ijk_stats in ijk_dict.values():
+            ep += calc_Sigma2(**ijk_stats)/2.0
+        Sigma2_list.append(ep)
+
+    print(f'x - {x_list}')
+    print(f'Sigma - {Sigma_list}')
+    print(f'KLD - {Sigma_KLD_list}')
+    print(f'Sigma2 - {Sigma2_list}')
+    print(f'Informed - {ips_list}')
+
+    pps_list = []
+    ips_list = []
+    Sigma_list = []
+    x_list_analytic = np.linspace(0, 1, 100)
+    for x in x_list_analytic:
+        w_tmp = w.copy()
+        w_tmp[0, 2] = w[0, 2] * x
+        w_tmp[2, 0] = w[2, 0] * x
+
+        model_tmp = Model(real_to_observed, w=w_tmp, dt=0.0001)
+        pps_list.append(model_tmp.passive_partial_Sigma)
+        ips_list.append(model_tmp.informed_partial_Sigma)
+        Sigma_list.append(model_tmp.steady_state_Sigma)
+
+
+    plt.plot(x_list_analytic, pps_list, label='Passive', c='b')
+    plt.plot(x_list_analytic, ips_list, label='Informed', c='g')
+    plt.plot(x_list_analytic, Sigma_list, label='Total', c='y')
+    plt.scatter(x_list, Sigma_KLD_list, label='KLD', marker='x', c='r')
+    plt.scatter(x_list, Sigma2_list, label='Sigma2', marker='o', c='c')
+    plt.legend()
+    plt.xlabel('x')
+    plt.yscale('log')
+    plt.show()
 
 def get_model(real_to_observed, w, x, N):
     """
@@ -491,12 +591,14 @@ def get_Sigma_KLD_gili_system(model):
     # First way -----------------------------------------------------------
     # f_WTD_1H2
     # WTD_021_laplace = lambda s: 1 / (s + lamda[0]) * 1 / (1 - w[2, 3] * w[3, 2] / ((s + lamda[2]) * (s + lamda[3]))) * (w[2, 0] / (s + lamda[2]) * (w[1, 2] + w[1, 3] * w[3, 2] / (s + lamda[3])) + w[3, 0] / (s + lamda[3]) * (w[1, 3] + w[1, 2] * w[2, 3] / (s + lamda[2])))
-    WTD_021_laplace = lambda s: 1 / ((s + lamda[0]) * ((s + lamda[2]) * (s + lamda[3]) - w[2, 3] * w[3, 2])) * (w[2, 0] * ((s + lamda[3]) * w[1, 2] + w[1, 3] * w[3, 2]) + w[3, 0] * ((s + lamda[2]) * w[1, 3] + w[1, 2] * w[2, 3]))
+    # WTD_021_laplace = lambda s: 1 / ((s + lamda[0]) * ((s + lamda[2]) * (s + lamda[3]) - w[2, 3] * w[3, 2])) * (w[2, 0] * ((s + lamda[3]) * w[1, 2] + w[1, 3] * w[3, 2]) + w[3, 0] * ((s + lamda[2]) * w[1, 3] + w[1, 2] * w[2, 3]))
+    WTD_021_laplace = lambda s: 1 / ((s + lamda[2]) * (s + lamda[3]) - w[2, 3] * w[3, 2]) * (p_ij(0, 2) * ((s + lamda[3]) * w[1, 2] + w[1, 3] * w[3, 2]) + p_ij(0, 3) * ((s + lamda[2]) * w[1, 3] + w[1, 2] * w[2, 3])) / (p_ij(0, 2) + p_ij(0, 3))
     WTD_021 = lambda t: float(mpmath.invertlaplace(WTD_021_laplace, t))#lambda t: quad(lambda s: WTD_021_laplace*np.exp(s*t), -np.inf, np.inf)
 
     # f_WTD_2H1
     # WTD_120_laplace = lambda s: 1 / (s + lamda[1]) * 1 / (1 - w[2, 3] * w[3, 2] / ((s + lamda[2]) * (s + lamda[3]))) * (w[2, 1] / (s + lamda[2]) * (w[0, 2] + w[0, 3] * w[3, 2] / (s + lamda[3])) + w[3, 1] / (s + lamda[3]) * (w[0, 3] + w[0, 2] * w[2, 3] / (s + lamda[2])))
-    WTD_120_laplace = lambda s: 1 / ((s + lamda[1]) * ((s + lamda[2]) * (s + lamda[3]) - w[2, 3] * w[3, 2])) * (w[2, 1] * ((s + lamda[3]) * w[0, 2] + w[0, 3] * w[3, 2]) + w[3, 1] * ((s + lamda[2]) * w[0, 3] + w[0, 2] * w[2, 3]))
+    # WTD_120_laplace = lambda s: 1 / ((s + lamda[1]) * ((s + lamda[2]) * (s + lamda[3]) - w[2, 3] * w[3, 2])) * (w[2, 1] * ((s + lamda[3]) * w[0, 2] + w[0, 3] * w[3, 2]) + w[3, 1] * ((s + lamda[2]) * w[0, 3] + w[0, 2] * w[2, 3]))
+    WTD_120_laplace = lambda s: 1 / ((s + lamda[2]) * (s + lamda[3]) - w[2, 3] * w[3, 2]) * (p_ij(1, 2) * ((s + lamda[3]) * w[0, 2] + w[0, 3] * w[3, 2]) + p_ij(1, 3) * ((s + lamda[2]) * w[0, 3] + w[0, 2] * w[2, 3])) / (p_ij(1, 2) + p_ij(1, 3))
     WTD_120 = lambda t: float(mpmath.invertlaplace(WTD_120_laplace, t))
     _tol = 1e-10
 
@@ -536,7 +638,7 @@ def get_Sigma_KLD_gili_system(model):
     # return sympy.integrate((p_021 * WTD_021 - p_120 * WTD_120) * sympy.log(WTD_021 / WTD_120), (t, 0, sympy.oo)) / T + model.informed_partial_Sigma
 
 
-def check_KLD(x):
+def check_KLD(x=0.0):
     real_to_observed = {0: 0,
                         1: 1,
                         2: 2,
@@ -550,7 +652,68 @@ def check_KLD(x):
     w[1, 0] *= np.exp(-x)
     model = Model(real_to_observed, w, dt=0.0001)
     print(get_Sigma_KLD_gili_system(model))
+    # model.sample_trajectory(10 ** 7)
+    # trj = model.trajectory
+    # print(trj.Sigma_aff+trj.Sigma_WTD)
 
+
+def script():
+    # import mpmath
+    # import numpy as np
+    # import matplotlib.pyplot as plt
+    # from project import *
+
+    x = 0
+
+    real_to_observed = {0: 0,
+                        1: 1,
+                        2: 2,
+                        3: 2
+                        }
+    w = np.array([[0, 2, 0, 1],
+                  [3, 0, 2, 35],
+                  [0, 50, 0, 0.7],
+                  [8, 0.2, 75, 0]], dtype=float)
+    w[0, 1] *= np.exp(x)
+    w[1, 0] *= np.exp(-x)
+    model = Model(real_to_observed, w, dt=0.0001)
+
+    p_ij = lambda i, j: model.get_p_ij(i, j)
+    total_mass_rate = np.sum(model.n_matrix_observed) - np.sum(np.diagonal(model.n_matrix_observed))
+    R_ij = lambda i, j: model.n_matrix_observed[i, j] / total_mass_rate
+    # p_1H2
+    p_02_to_21 = (p_ij(0, 2) * (p_ij(2, 1) + p_ij(2, 3) * p_ij(3, 1)) + p_ij(0, 3) * (
+                p_ij(3, 1) + p_ij(3, 2) * p_ij(2, 1))) / (1 - p_ij(2, 3) * p_ij(3, 2)) / (p_ij(0, 2) + p_ij(0, 3))
+    p_021 = R_ij(0, 2) * p_02_to_21
+    # p_2H1
+    p_12_to_20 = (p_ij(1, 2) * (p_ij(2, 0) + p_ij(2, 3) * p_ij(3, 0)) + p_ij(1, 3) * (
+                p_ij(3, 0) + p_ij(3, 2) * p_ij(2, 0))) / (1 - p_ij(2, 3) * p_ij(3, 2)) / (p_ij(1, 2) + p_ij(1, 3))
+    p_120 = R_ij(1, 2) * p_12_to_20
+    w = model.w
+    lamda = -np.diagonal(w)
+    tau = 1 / lamda
+    ss = model.steady_state.flatten()
+    tau_H = (ss[2] * (tau[2] + p_ij(2, 3) * tau[3]) + ss[3] * (tau[3] + p_ij(3, 2) * tau[2])) / (
+                (ss[2] + ss[3]) * (1 - p_ij(2, 3) * p_ij(3, 2)))
+    T = ss[0] * tau[0] + ss[1] * tau[1] + (ss[2] + ss[3]) * tau_H
+
+    s = sympy.symbols('s')
+    t = sympy.symbols('t', real=True, positive=True)
+
+    def invL(F):
+        return sympy.inverse_laplace_transform(F, s, t, noconds=True)
+    w_01, w_02, w_03, w_10, w_12, w_13, w_20, w_21, w_23, w_30, w_31, w_32 = sympy.symbols(
+        'w_01, w_02, w_03, w_10, w_12, w_13, w_20, w_21, w_23, w_30, w_31, w_32', real=True, positice=True)
+    lamda_0, lamda_1, lamda_2, lamda_3 = sympy.symbols('lamda_0, lamda_1, lamda_2, lamda_3', real=True, positice=True)
+    psi_ij = lambda i, j: globals()[f'w_{i}{j}'] / (s + globals()[f'lamda_{j}'])
+    subs_dict = {w_01: w[0, 1], w_02: w[0, 2], w_03: w[0, 3], w_10: w[1, 0], w_12: w[1, 2], w_13: w[1, 3],
+                 w_20: w[2, 0], w_21: w[2, 1], w_23: w[2, 3], w_30: w[3, 0], w_31: w[3, 1], w_32: w[3, 2]}
+    subs_dict.update({lamda_0: lamda[0], lamda_1: lamda[1], lamda_2: lamda[2], lamda_3: lamda[3]})
+    W = sympy.Matrix([[0, w_23/(s+lamda_3)], [w_32/(s+lamda_2), 0]])
+    Winv = (sympy.eye(2)-W).inv()
+    psi_eff_lap = (p_ij(0, 2)*(Winv[0, 0]*psi_ij(1, 2) + Winv[1, 0]*psi_ij(1, 3)) + p_ij(0, 3)*(Winv[0, 1]*psi_ij(1, 2) + Winv[1, 1]*psi_ij(1, 3)))/(p_ij(0, 2) + p_ij(0, 3))
+    psi_eff_general = invL(psi_eff_lap)
+    psi_eff = psi_eff_general.subs(subs_dict)
 
 # WTD_021 = 8*(-0.0148613*sympy.exp(-78.2631*t) - 1.39136*sympy.exp(-35.4369*t) + 1.40622*sympy.exp(-11*t))
 # WTD_120 = 3.35943*sympy.exp(-78.2631*t) - 8.59455*sympy.exp(-52.2*t) + 5.23513*sympy.exp(-35.4369*t)
@@ -807,7 +970,8 @@ if __name__ == '__main__':
     # task3()
     # main()
     # task4()
-    check_KLD(-0.67)
+    task5()
+    # check_KLD(0)
     # dunkel_example()
     # save_dunkel_stats()
     # real_to_observed = {0: 0,
