@@ -707,17 +707,34 @@ class Trajectory(list):
                     ret += self._get_p_ijk(i, j, k) * tmp / mean_T
         return ret
 
+    # @property
+    # def Sigma_WTD(self):
+    #     ret = 0
+    #     mean_T = self.total_time/np.sum(self._jump_counter)
+    #     for i in range(self.n_observed):
+    #         for j in range(self.n_observed):
+    #             if i != j and len(self._observed_to_real[j]) > 1:
+    #                 for k in range(self.n_observed):
+    #                     if j != k and i != k:
+    #                         print(i, ', ', j, ', ', k)
+    #                         ret += self._get_p_ijk(i, j, k) * self._get_D(i, j, k, k, j, i) / mean_T
+    #     return ret
+
     @property
     def Sigma_WTD(self):
         ret = 0
-        mean_T = self.total_time/np.sum(self._jump_counter)
-        for i in range(self.n_observed):
+        _tol = 1e-10
+        mean_T = self.total_time / np.sum(self._jump_counter)
+        for i in range(self.n_observed-1):
             for j in range(self.n_observed):
                 if i != j and len(self._observed_to_real[j]) > 1:
-                    for k in range(self.n_observed):
-                        if j != k and i != k:
+                    for k in range(i+1, self.n_observed):
+                        if j != k:
                             print(i, ', ', j, ', ', k)
-                            ret += self._get_p_ijk(i, j, k) * self._get_D(i, j, k, k, j, i) / mean_T
+                            kde_func_1 = lambda t: self._get_kde_func(i, j, k)(t) + self._get_kde_func(i, j, k)(-t)
+                            kde_func_2 = lambda t: self._get_kde_func(k, j, i)(t) + self._get_kde_func(k, j, i)(-t)
+                            integrand_func = lambda t: (self._get_p_ijk(i, j, k)*kde_func_1(t) - self._get_p_ijk(k, j, i)*kde_func_2(t))*np.log(((kde_func_1(t)+_tol)/(kde_func_2(t)+_tol)))
+                            ret += quad(integrand_func, 0, np.inf)[0]/mean_T
         return ret
 
     def _get_n_IJK(self, i, j, k):
