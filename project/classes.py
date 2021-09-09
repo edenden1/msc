@@ -96,7 +96,11 @@ class Model:
         # return np.sum(np.multiply(self.steady_state_J, np.log(w_mul_p_st_T)))
         return (self.steady_state_J[0, 1] * np.log(self.w[0, 1] * self.steady_state_stalling[1] / (self.w[1, 0] * self.steady_state_stalling[0])))[0]
 
-    def __init__(self, real_to_observed, w=None, dt=0.001):
+    @property
+    def stalling_force(self):
+        return 0.5*np.log(self.w[1, 0] * self.steady_state_stalling[0] / (self.w[0, 1] * self.steady_state_stalling[1]))[0]
+
+    def __init__(self, real_to_observed, w=None, dt=0.0001):
         """
 
         :param real_to_observed: A dictionary with the real state as key and the observed state as value
@@ -111,10 +115,12 @@ class Model:
             if w.shape[0] != w.shape[1]:
                 raise Exception('w must be square')
             else:
-                self._w = w
+                self._w = w.copy()
+                if (w.sum(axis=0) != 0).any():
+                    np.fill_diagonal(self._w, 0)
+                    np.fill_diagonal(self._w, (-np.sum(self._w, axis=0)).tolist())
         else:
             self._w = self._initialize_w()
-
 
         self._dt = dt
         self._cache = {}
@@ -701,17 +707,34 @@ class Trajectory(list):
                     ret += self._get_p_ijk(i, j, k) * tmp / mean_T
         return ret
 
+    # @property
+    # def Sigma_WTD(self):
+    #     ret = 0
+    #     mean_T = self.total_time/np.sum(self._jump_counter)
+    #     for i in range(self.n_observed):
+    #         for j in range(self.n_observed):
+    #             if i != j and len(self._observed_to_real[j]) > 1:
+    #                 for k in range(self.n_observed):
+    #                     if j != k and i != k:
+    #                         print(i, ', ', j, ', ', k)
+    #                         ret += self._get_p_ijk(i, j, k) * self._get_D(i, j, k, k, j, i) / mean_T
+    #     return ret
+
     @property
     def Sigma_WTD(self):
         ret = 0
-        mean_T = self.total_time/np.sum(self._jump_counter)
-        for i in range(self.n_observed):
+        _tol = 1e-10
+        mean_T = self.total_time / np.sum(self._jump_counter)
+        for i in range(self.n_observed-1):
             for j in range(self.n_observed):
                 if i != j and len(self._observed_to_real[j]) > 1:
-                    for k in range(self.n_observed):
-                        if j != k and i != k:
+                    for k in range(i+1, self.n_observed):
+                        if j != k:
                             print(i, ', ', j, ', ', k)
-                            ret += self._get_p_ijk(i, j, k) * self._get_D(i, j, k, k, j, i) / mean_T
+                            kde_func_1 = lambda t: self._get_kde_func(i, j, k)(t) + self._get_kde_func(i, j, k)(-t)
+                            kde_func_2 = lambda t: self._get_kde_func(k, j, i)(t) + self._get_kde_func(k, j, i)(-t)
+                            integrand_func = lambda t: (self._get_p_ijk(i, j, k)*kde_func_1(t) - self._get_p_ijk(k, j, i)*kde_func_2(t))*np.log(((kde_func_1(t)+_tol)/(kde_func_2(t)+_tol)))
+                            ret += quad(integrand_func, 0, np.inf)[0]/mean_T
         return ret
 
     def _get_n_IJK(self, i, j, k):
