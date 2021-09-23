@@ -533,7 +533,6 @@ def get_Sigma2_stats_from_model(model):
 def get_Sigma2_stats_gili_system(model):
     n_mat_obs = model.n_matrix_observed
     n_mat = model.n_matrix
-    p = model.steady_state.squeeze()
     cutoff = 1e-10
 
     p_ij = lambda i, j: model.get_p_ij(i, j)
@@ -735,7 +734,9 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
     # n_mul = np.array([0.1, 0.2, 0.3, 0.4]) #1
     # n_mul = np.array([0.05, 0.1, 0.25, 0.6]) #2
     # n_mul = np.array([0.01, 0.04, 0.2, 0.75]) #3
-    n_mul = np.array([0.25, 0.25, 0.25, 0.25]) #original
+    # n_mul = np.array([0.25, 0.25, 0.25, 0.25]) #original
+    n_mul = np.random.rand(4)
+    n_mul /= np.sum(n_mul)
     n_0 = np.concatenate([n_mul*n_JI, n_mul*n_IJ, n_mul*n_JK])
     # n_0 = np.array(4 * [n_JI] + 4 * [n_IJ] + 4 * [n_JK]) / 4.0
     # n_0 = np.random.rand(12)# n_00 * np.random.rand(12)
@@ -761,28 +762,37 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
             {'type': 'ineq', 'fun': lambda x: n_JK - np.sum(x[8:])}
             ] + [{'type': 'ineq', 'fun': lambda x: x[i] - x[4 + i] + x[8 + i]} for i in range(4)]
     bnds = 4 * [(0, n_JI)] + 4 * [(0, n_IJ)] + 4 * [(0, n_JK)]
-    con_tol = 1e-8
-    res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
-                   options={'maxiter': 1e4, 'ftol': 1e-7}, bounds=bnds,
-                   constraints=cons, tol=con_tol)
-    ep_min = 0
-    ep = entropy_production(res.x)
-    if ep > 0:
-        ep_min = ep
-    while res.status != 0 and con_tol < 1e-1:
-        con_tol *= 4
-        res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
-                       options={'maxiter': 1e4, 'ftol': 1e-5}, bounds=bnds,
-                       constraints=cons, tol=con_tol)
-        ep = entropy_production(res.x)
-        if ep >= 0:
-            ep_min = min(ep_min, ep)
-    if res.status != 0:
-        print("Didn't converge")
-    else:
-        ep_min = entropy_production(res.x)
 
-    return ep_min
+    def calc():
+        n_mul = np.random.rand(4)
+        n_mul /= np.sum(n_mul)
+        n_0 = np.concatenate([n_mul * n_JI, n_mul * n_IJ, n_mul * n_JK])
+        con_tol = 1e-8
+        res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
+                       options={'maxiter': 1e4, 'ftol': 1e-7}, bounds=bnds,
+                       constraints=cons, tol=con_tol)
+        # ep_min = 0
+        ep = entropy_production(res.x)
+        # if ep > 0:
+        #     ep_min = ep
+        while res.status != 0 and con_tol < 1e-3:
+            con_tol *= 4
+            res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
+                           options={'maxiter': 1e4, 'ftol': 1e-5}, bounds=bnds,
+                           constraints=cons, tol=con_tol)
+            ep = entropy_production(res.x)
+            # if ep >= 0:
+            #     ep_min = min(ep_min, ep)
+        return ep, res.status
+
+    ep, status = calc()
+    while status != 0:
+        ep, status = calc()
+    # if res.status != 0:
+    #     print("Didn't converge")
+    # else:
+    #     ep_min = ep
+    return ep
 
 
 def epr_jac(x):
