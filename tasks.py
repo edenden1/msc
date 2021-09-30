@@ -764,9 +764,12 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
     bnds = 4 * [(0, n_JI)] + 4 * [(0, n_IJ)] + 4 * [(0, n_JK)]
 
     def calc():
-        n_mul = np.random.rand(4)
-        n_mul /= np.sum(n_mul)
-        n_0 = np.concatenate([n_mul * n_JI, n_mul * n_IJ, n_mul * n_JK])
+        n_mul_list = []
+        for i in range(3):
+            n_mul = np.random.rand(4)
+            n_mul /= np.sum(n_mul)
+            n_mul_list.append(n_mul)
+        n_0 = np.concatenate([n_mul_list[0] * n_JI, n_mul_list[1] * n_IJ, n_mul_list[2] * n_JK])
         con_tol = 1e-8
         res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
                        options={'maxiter': 1e4, 'ftol': 1e-7}, bounds=bnds,
@@ -992,9 +995,9 @@ if __name__ == '__main__':
     # task3()
     # main()
     # task4()
-    task5()
+    # task5()
     # check_KLD(0)
-    # dunkel_example()
+    dunkel_example()
     # save_dunkel_stats()
     # real_to_observed = {0: 0,
     #                     1: 1,
