@@ -344,8 +344,8 @@ def task5():
     # w[1, 0] *= np.exp(-x_stall)
 
     N = 10**6
-    x_first = 0
-    x_last = 10
+    x_first = 0.1
+    x_last = 0.2
     x_list = np.linspace(x_first, x_last, 10)
     for x in x_list:
         print(x)
@@ -403,10 +403,10 @@ def task5():
     plt.plot(x_list_analytic, pps_list, label='Passive', c='b')
     plt.plot(x_list_analytic, ips_list, label='Informed', c='g')
     plt.plot(x_list_analytic, Sigma_list, label='Total', c='y')
-    # plt.scatter(x_list, Sigma_KLD_list, label='KLD', marker='x', c='r')
-    # plt.scatter(x_list, Sigma2_list, label='Sigma2', marker='o', c='c')
-    plt.plot(x_list, Sigma_KLD_list, label='KLD', c='r')
-    plt.plot(x_list, Sigma2_list, label='Sigma2', c='c')
+    plt.scatter(x_list, Sigma_KLD_list, label='KLD', marker='x', c='r')
+    plt.scatter(x_list, Sigma2_list, label='Sigma2', marker='o', c='c')
+    # plt.plot(x_list, Sigma_KLD_list, label='KLD', c='r')
+    # plt.plot(x_list, Sigma2_list, label='Sigma2', c='c')
     plt.legend()
     plt.xlabel('x')
     plt.yscale('log')
@@ -770,22 +770,22 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
             n_mul /= np.sum(n_mul)
             n_mul_list.append(n_mul)
         n_0 = np.concatenate([n_mul_list[0] * n_JI, n_mul_list[1] * n_IJ, n_mul_list[2] * n_JK])
-        con_tol = 1e-8
+        con_tol = 1e-6
         res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
-                       options={'maxiter': 1e4, 'ftol': 1e-7}, bounds=bnds,
+                       options={'maxiter': 1e5, 'ftol': 1e-6}, bounds=bnds,
                        constraints=cons, tol=con_tol)
         # ep_min = 0
         ep = entropy_production(res.x)
         # if ep > 0:
         #     ep_min = ep
-        while res.status != 0 and con_tol < 1e-3:
-            con_tol *= 4
-            res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
-                           options={'maxiter': 1e4, 'ftol': 1e-5}, bounds=bnds,
-                           constraints=cons, tol=con_tol)
-            ep = entropy_production(res.x)
-            # if ep >= 0:
-            #     ep_min = min(ep_min, ep)
+        # while res.status != 0 and con_tol < 1e-3:
+        #     con_tol *= 4
+        #     res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
+        #                    options={'maxiter': 1e4, 'ftol': 1e-5}, bounds=bnds,
+        #                    constraints=cons, tol=con_tol)
+        #     ep = entropy_production(res.x)
+        #     # if ep >= 0:
+        #     #     ep_min = min(ep_min, ep)
         return ep, res.status
 
     ep, status = calc()
@@ -995,9 +995,9 @@ if __name__ == '__main__':
     # task3()
     # main()
     # task4()
-    # task5()
+    task5()
     # check_KLD(0)
-    dunkel_example()
+    # dunkel_example()
     # save_dunkel_stats()
     # real_to_observed = {0: 0,
     #                     1: 1,
