@@ -308,7 +308,7 @@ def task4():
 
 def task5():
     """
-    Check the changes of the Sigma2/KLD when changing the 1-3 rates from some value to zero.
+    Check the change over 1-3 rates from some values to zero.
 
     :return:
     """
@@ -325,10 +325,15 @@ def task5():
                         3: 2
                         }
 
-    w = np.array([[0, 2, 1, 8],
-                  [3, 0, 8, 1],
-                  [8, 1, 0, 5],
-                  [1, 8, 5, 0]], dtype=float)
+    # w = np.array([[0, 2, 1, 8],
+    #               [3, 0, 8, 1],
+    #               [8, 1, 0, 5],
+    #               [1, 8, 5, 0]], dtype=float)
+
+    w = np.array([[0, 2, 1, 1],
+                  [3, 0, 2, 35],
+                  [1, 50, 0, 0.7],
+                  [8, 0.2, 75, 0]], dtype=float)
 
     model = Model(real_to_observed, w, dt=0.0001)
     print(model.n_matrix)
@@ -339,8 +344,9 @@ def task5():
     # w[1, 0] *= np.exp(-x_stall)
 
     N = 10**6
-
-    x_list = np.linspace(0, 1, 8)
+    x_first = 0.1
+    x_last = 0.2
+    x_list = np.linspace(x_first, x_last, 10)
     for x in x_list:
         print(x)
         w_tmp = w.copy()
@@ -362,9 +368,6 @@ def task5():
         Sigma_KLD_list.append(trj.Sigma_aff + trj.Sigma_WTD)
         # ijk_dict = get_Sigma2_stats_from_model(model_tmp)
 
-        # with open(f'stats\stats9_{x}.json', 'r') as jsonFile:
-        #     ijk_dict = json.load(jsonFile)
-        # trj = TrajectorySigma2(real_to_observed, w_tmp, N)
         # ijk_dict = get_Sigma2_stats_from_trajectory_sigma2(trj)
         ijk_dict = get_Sigma2_stats_from_trajectory(trj)
         print(ijk_dict)
@@ -385,7 +388,7 @@ def task5():
     pps_list = []
     ips_list = []
     Sigma_list = []
-    x_list_analytic = np.linspace(0, 1, 100)
+    x_list_analytic = np.linspace(x_first, x_last, 100)
     for x in x_list_analytic:
         w_tmp = w.copy()
         w_tmp[0, 2] = w[0, 2] * x
@@ -402,10 +405,13 @@ def task5():
     plt.plot(x_list_analytic, Sigma_list, label='Total', c='y')
     plt.scatter(x_list, Sigma_KLD_list, label='KLD', marker='x', c='r')
     plt.scatter(x_list, Sigma2_list, label='Sigma2', marker='o', c='c')
+    # plt.plot(x_list, Sigma_KLD_list, label='KLD', c='r')
+    # plt.plot(x_list, Sigma2_list, label='Sigma2', c='c')
     plt.legend()
     plt.xlabel('x')
     plt.yscale('log')
     plt.show()
+
 
 def get_model(real_to_observed, w, x, N):
     """
@@ -527,31 +533,24 @@ def get_Sigma2_stats_from_model(model):
 def get_Sigma2_stats_gili_system(model):
     n_mat_obs = model.n_matrix_observed
     n_mat = model.n_matrix
-    p = model.steady_state
     cutoff = 1e-10
 
     p_ij = lambda i, j: model.get_p_ij(i, j)
 
     ijk_dict = {}
 
-    #n_H1
-    n_20 = (p[2]*(n_mat[2,0] + n_mat[2,3]*p_ij(3,0)) + p[3]*(n_mat[3,0] + n_mat[3,2]*p_ij(2,0))) / (1 - p_ij(2,3)*p_ij(3,2)) / (p[2]+p[3])
-
-    #n_H2
-    n_21 = (p[2]*(n_mat[2,1] + n_mat[2,3]*p_ij(3,1)) + p[3]*(n_mat[3,1] + n_mat[3,2]*p_ij(2,1))) / (1 - p_ij(2,3)*p_ij(3,2)) / (p[2]+p[3])
+    ijk_dict['102'] = dict(n_JI=max(cutoff, n_mat_obs[0, 1]),
+                           n_IJ=max(cutoff, n_mat_obs[1, 0]),
+                           n_JK=max(cutoff, n_mat_obs[0, 2]),
+                           n_IJK=max(cutoff, n_mat_obs[1, 0] * (p_ij(0, 2) + p_ij(0, 3))),
+                           n_KJI=max(cutoff, n_mat_obs[2, 0] * p_ij(0, 1))
+                           )
 
     ijk_dict['012'] = dict(n_JI=max(cutoff, n_mat_obs[1, 0]),
                            n_IJ=max(cutoff, n_mat_obs[0, 1]),
                            n_JK=max(cutoff, n_mat_obs[1, 2]),
                            n_IJK=max(cutoff, n_mat_obs[0, 1]*(p_ij(1,2) + p_ij(1,3))),
-                           n_KJI=max(cutoff, n_21.item()*p_ij(1, 0))#n_mat_obs[2, 1]*p_ij(1, 0))
-                           )
-
-    ijk_dict['102'] = dict(n_JI=max(cutoff, n_mat_obs[0, 1]),
-                           n_IJ=max(cutoff, n_mat_obs[1, 0]),
-                           n_JK=max(cutoff, n_mat_obs[0, 2]),
-                           n_IJK=max(cutoff, n_mat_obs[1, 0] * (p_ij(0, 2) + p_ij(0,3))),
-                           n_KJI=max(cutoff, n_20.item()*p_ij(0, 1))#n_mat_obs[2, 0] * p_ij(0, 1))
+                           n_KJI=max(cutoff, n_mat_obs[2, 1]*p_ij(1, 0))
                            )
 
     # n_1H2
@@ -560,9 +559,9 @@ def get_Sigma2_stats_gili_system(model):
     #n_2H1
     n_120 = (n_mat[1,2]*(p_ij(2,0) + p_ij(2,3)*p_ij(3,0)) + n_mat[1,3]*(p_ij(3,0) + p_ij(3,2)*p_ij(2,0))) / (1 - p_ij(2,3)*p_ij(3,2))
 
-    ijk_dict['021'] = dict(n_JI=max(cutoff, n_20.item()),# n_mat_obs[2, 0]),
+    ijk_dict['021'] = dict(n_JI=max(cutoff, n_mat_obs[2, 0]),
                            n_IJ=max(cutoff, n_mat_obs[0, 2]),
-                           n_JK=max(cutoff, n_21.item()),#n_mat_obs[2, 1]),
+                           n_JK=max(cutoff, n_mat_obs[2, 1]),
                            n_IJK=max(cutoff, n_021),
                            n_KJI=max(cutoff, n_120)
                            )
@@ -734,7 +733,14 @@ def save_statistics(trj, name):
 
 def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
     _tol = 1e-10
-    n_0 = np.array(4 * [n_JI] + 4 * [n_IJ] + 4 * [n_JK]) / 4.0
+    # n_mul = np.array([0.1, 0.2, 0.3, 0.4]) #1
+    # n_mul = np.array([0.05, 0.1, 0.25, 0.6]) #2
+    # n_mul = np.array([0.01, 0.04, 0.2, 0.75]) #3
+    # n_mul = np.array([0.25, 0.25, 0.25, 0.25]) #original
+    n_mul = np.random.rand(4)
+    n_mul /= np.sum(n_mul)
+    n_0 = np.concatenate([n_mul*n_JI, n_mul*n_IJ, n_mul*n_JK])
+    # n_0 = np.array(4 * [n_JI] + 4 * [n_IJ] + 4 * [n_JK]) / 4.0
     # n_0 = np.random.rand(12)# n_00 * np.random.rand(12)
     #
     # cons = [{'type': 'eq', 'fun': lambda x: np.sum(np.divide(x[4:8] * x[8:], x[:4] + x[8:], out=np.zeros(4), where=(x[:4]+x[8:]>2*_tol))) - n_IJK},
@@ -758,28 +764,40 @@ def calc_Sigma2(n_JI, n_IJ, n_JK, n_IJK, n_KJI):
             {'type': 'ineq', 'fun': lambda x: n_JK - np.sum(x[8:])}
             ] + [{'type': 'ineq', 'fun': lambda x: x[i] - x[4 + i] + x[8 + i]} for i in range(4)]
     bnds = 4 * [(0, n_JI)] + 4 * [(0, n_IJ)] + 4 * [(0, n_JK)]
-    con_tol = 1e-8
-    res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
-                   options={'maxiter': 1e4, 'ftol': 1e-7}, bounds=bnds,
-                   constraints=cons, tol=con_tol)
-    ep_min = 0
-    ep = entropy_production(res.x)
-    if ep > 0:
-        ep_min = ep
-    while res.status != 0 and con_tol < 1e-3:
-        con_tol *= 4
-        res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
-                       options={'maxiter': 1e4, 'ftol': 1e-5}, bounds=bnds,
-                       constraints=cons, tol=con_tol)
-        ep = entropy_production(res.x)
-        if ep >= 0:
-            ep_min = min(ep_min, ep)
-    if res.status != 0:
-        print("Didn't converge")
-    else:
-        ep_min = entropy_production(res.x)
 
-    return ep_min
+    def calc():
+        n_mul_list = []
+        for i in range(3):
+            n_mul = np.random.rand(4)
+            n_mul /= np.sum(n_mul)
+            n_mul_list.append(n_mul)
+        n_0 = np.concatenate([n_mul_list[0] * n_JI, n_mul_list[1] * n_IJ, n_mul_list[2] * n_JK])
+        con_tol = 1e-6
+        res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
+                       options={'maxiter': 1e5, 'ftol': 1e-6}, bounds=bnds,
+                       constraints=cons, tol=con_tol)
+        # ep_min = 0
+        ep = entropy_production(res.x)
+        # if ep > 0:
+        #     ep_min = ep
+        # while res.status != 0 and con_tol < 1e-3:
+        #     con_tol *= 4
+        #     res = minimize(entropy_production, n_0, jac=epr_jac, method='SLSQP',
+        #                    options={'maxiter': 1e4, 'ftol': 1e-5}, bounds=bnds,
+        #                    constraints=cons, tol=con_tol)
+        #     ep = entropy_production(res.x)
+        #     # if ep >= 0:
+        #     #     ep_min = min(ep_min, ep)
+        return ep, res.status
+
+    ep, status = calc()
+    while status != 0:
+        ep, status = calc()
+    # if res.status != 0:
+    #     print("Didn't converge")
+    # else:
+    #     ep_min = ep
+    return ep
 
 
 def epr_jac(x):
