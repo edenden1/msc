@@ -36,10 +36,11 @@ class Model:
     @property
     def steady_state(self):
         if self._steady_state is None:
-            try:
-                self._steady_state = self.get_steady_state()
-            except IndexError:
-                self._steady_state = self.numeric_steady_state()
+            self._steady_state = self.numeric_steady_state()
+            # try:
+            #     self._steady_state = self.get_steady_state()
+            # except IndexError:
+            #     self._steady_state = self.numeric_steady_state()
         return self._steady_state
 
     @property
@@ -126,8 +127,8 @@ class Model:
         self._cache = {}
 
     def get_steady_state(self):
-        eig_vals, eig_vecs = np.linalg.eig(self._w + np.eye(self.n))
-        mask = (np.imag(eig_vals) == 0) & (np.real(eig_vals)*1000//1000 == 1)
+        eig_vals, eig_vecs = np.linalg.eig(self._w)
+        mask = (np.imag(eig_vals) == 0) & (np.real(eig_vals)*1000//1000 == 0)
         ind = np.where(mask)[0][0]
         p = np.real(eig_vecs[:, ind]).reshape(self.n, 1)
         return p/np.sum(p)
@@ -140,6 +141,7 @@ class Model:
         :param plot_flag: A flag to plot the probabilities over time
         :return:
         """
+        # print('numeric steady state calculated')
         dt = self._dt if dt is None else dt
         p = self._initialize_p()
         T = 100.0 / np.min(np.abs(np.diagonal(self.w)))

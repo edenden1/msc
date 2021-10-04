@@ -308,7 +308,7 @@ def task4():
 
 def task5():
     """
-    Check
+    Check the changes of the Sigma2/KLD when changing the 1-3 rates from some value to zero.
 
     :return:
     """
@@ -366,10 +366,10 @@ def task5():
         #     ijk_dict = json.load(jsonFile)
         # trj = TrajectorySigma2(real_to_observed, w_tmp, N)
         # ijk_dict = get_Sigma2_stats_from_trajectory_sigma2(trj)
-        # ijk_dict = get_Sigma2_stats_from_trajectory(trj)
-        # print(ijk_dict)
+        ijk_dict = get_Sigma2_stats_from_trajectory(trj)
+        print(ijk_dict)
         ijk_dict = get_Sigma2_stats_gili_system(model_tmp)
-        # print(ijk_dict)
+        print(ijk_dict)
 
         ep = 0
         for ijk_stats in ijk_dict.values():
@@ -527,24 +527,31 @@ def get_Sigma2_stats_from_model(model):
 def get_Sigma2_stats_gili_system(model):
     n_mat_obs = model.n_matrix_observed
     n_mat = model.n_matrix
+    p = model.steady_state
     cutoff = 1e-10
 
     p_ij = lambda i, j: model.get_p_ij(i, j)
 
     ijk_dict = {}
 
+    #n_H1
+    n_20 = (p[2]*(n_mat[2,0] + n_mat[2,3]*p_ij(3,0)) + p[3]*(n_mat[3,0] + n_mat[3,2]*p_ij(2,0))) / (1 - p_ij(2,3)*p_ij(3,2)) / (p[2]+p[3])
+
+    #n_H2
+    n_21 = (p[2]*(n_mat[2,1] + n_mat[2,3]*p_ij(3,1)) + p[3]*(n_mat[3,1] + n_mat[3,2]*p_ij(2,1))) / (1 - p_ij(2,3)*p_ij(3,2)) / (p[2]+p[3])
+
     ijk_dict['012'] = dict(n_JI=max(cutoff, n_mat_obs[1, 0]),
                            n_IJ=max(cutoff, n_mat_obs[0, 1]),
                            n_JK=max(cutoff, n_mat_obs[1, 2]),
                            n_IJK=max(cutoff, n_mat_obs[0, 1]*(p_ij(1,2) + p_ij(1,3))),
-                           n_KJI=max(cutoff, n_mat_obs[2, 1]*p_ij(1, 0))
+                           n_KJI=max(cutoff, n_21.item()*p_ij(1, 0))#n_mat_obs[2, 1]*p_ij(1, 0))
                            )
 
     ijk_dict['102'] = dict(n_JI=max(cutoff, n_mat_obs[0, 1]),
                            n_IJ=max(cutoff, n_mat_obs[1, 0]),
                            n_JK=max(cutoff, n_mat_obs[0, 2]),
                            n_IJK=max(cutoff, n_mat_obs[1, 0] * (p_ij(0, 2) + p_ij(0,3))),
-                           n_KJI=max(cutoff, n_mat_obs[2, 0] * p_ij(0, 1))
+                           n_KJI=max(cutoff, n_20.item()*p_ij(0, 1))#n_mat_obs[2, 0] * p_ij(0, 1))
                            )
 
     # n_1H2
@@ -553,9 +560,9 @@ def get_Sigma2_stats_gili_system(model):
     #n_2H1
     n_120 = (n_mat[1,2]*(p_ij(2,0) + p_ij(2,3)*p_ij(3,0)) + n_mat[1,3]*(p_ij(3,0) + p_ij(3,2)*p_ij(2,0))) / (1 - p_ij(2,3)*p_ij(3,2))
 
-    ijk_dict['021'] = dict(n_JI=max(cutoff, n_mat_obs[2, 0]),
+    ijk_dict['021'] = dict(n_JI=max(cutoff, n_20.item()),# n_mat_obs[2, 0]),
                            n_IJ=max(cutoff, n_mat_obs[0, 2]),
-                           n_JK=max(cutoff, n_mat_obs[2, 1]),
+                           n_JK=max(cutoff, n_21.item()),#n_mat_obs[2, 1]),
                            n_IJK=max(cutoff, n_021),
                            n_KJI=max(cutoff, n_120)
                            )
@@ -593,18 +600,19 @@ def get_Sigma_KLD_gili_system(model):
     # WTD_021_laplace = lambda s: 1 / (s + lamda[0]) * 1 / (1 - w[2, 3] * w[3, 2] / ((s + lamda[2]) * (s + lamda[3]))) * (w[2, 0] / (s + lamda[2]) * (w[1, 2] + w[1, 3] * w[3, 2] / (s + lamda[3])) + w[3, 0] / (s + lamda[3]) * (w[1, 3] + w[1, 2] * w[2, 3] / (s + lamda[2])))
     # WTD_021_laplace = lambda s: 1 / ((s + lamda[0]) * ((s + lamda[2]) * (s + lamda[3]) - w[2, 3] * w[3, 2])) * (w[2, 0] * ((s + lamda[3]) * w[1, 2] + w[1, 3] * w[3, 2]) + w[3, 0] * ((s + lamda[2]) * w[1, 3] + w[1, 2] * w[2, 3]))
     WTD_021_laplace = lambda s: 1 / ((s + lamda[2]) * (s + lamda[3]) - w[2, 3] * w[3, 2]) * (p_ij(0, 2) * ((s + lamda[3]) * w[1, 2] + w[1, 3] * w[3, 2]) + p_ij(0, 3) * ((s + lamda[2]) * w[1, 3] + w[1, 2] * w[2, 3])) / (p_ij(0, 2) + p_ij(0, 3))
-    WTD_021 = lambda t: float(mpmath.invertlaplace(WTD_021_laplace, t))#lambda t: quad(lambda s: WTD_021_laplace*np.exp(s*t), -np.inf, np.inf)
-
+    WTD_021 = lambda t: float(mpmath.invertlaplace(WTD_021_laplace, t, method='dehoog'))#lambda t: quad(lambda s: WTD_021_laplace*np.exp(s*t), -np.inf, np.inf)
+    import pdb
+    pdb.set_trace()
     # f_WTD_2H1
     # WTD_120_laplace = lambda s: 1 / (s + lamda[1]) * 1 / (1 - w[2, 3] * w[3, 2] / ((s + lamda[2]) * (s + lamda[3]))) * (w[2, 1] / (s + lamda[2]) * (w[0, 2] + w[0, 3] * w[3, 2] / (s + lamda[3])) + w[3, 1] / (s + lamda[3]) * (w[0, 3] + w[0, 2] * w[2, 3] / (s + lamda[2])))
     # WTD_120_laplace = lambda s: 1 / ((s + lamda[1]) * ((s + lamda[2]) * (s + lamda[3]) - w[2, 3] * w[3, 2])) * (w[2, 1] * ((s + lamda[3]) * w[0, 2] + w[0, 3] * w[3, 2]) + w[3, 1] * ((s + lamda[2]) * w[0, 3] + w[0, 2] * w[2, 3]))
     WTD_120_laplace = lambda s: 1 / ((s + lamda[2]) * (s + lamda[3]) - w[2, 3] * w[3, 2]) * (p_ij(1, 2) * ((s + lamda[3]) * w[0, 2] + w[0, 3] * w[3, 2]) + p_ij(1, 3) * ((s + lamda[2]) * w[0, 3] + w[0, 2] * w[2, 3])) / (p_ij(1, 2) + p_ij(1, 3))
-    WTD_120 = lambda t: float(mpmath.invertlaplace(WTD_120_laplace, t))
+    WTD_120 = lambda t: float(mpmath.invertlaplace(WTD_120_laplace, t, method='dehoog'))
     _tol = 1e-10
 
     t_arr = np.linspace(1e-10, 0.2, 100)
-    y021_arr = list(map(lambda x: mpmath.invertlaplace(WTD_021_laplace, x), t_arr))
-    y120_arr = list(map(lambda x: mpmath.invertlaplace(WTD_120_laplace, x), t_arr))
+    y021_arr = list(map(lambda x: mpmath.invertlaplace(WTD_021_laplace, x, method='dehoog'), t_arr))
+    y120_arr = list(map(lambda x: mpmath.invertlaplace(WTD_120_laplace, x, method='dehoog'), t_arr))
     plt.plot(t_arr, y021_arr, c='b', label='WTD 1->H->2')
     plt.plot(t_arr, y120_arr, c='r', label='WTD 2->H->1')
     plt.legend()
@@ -651,8 +659,9 @@ def check_KLD(x=0.0):
     w[0, 1] *= np.exp(x)
     w[1, 0] *= np.exp(-x)
     model = Model(real_to_observed, w, dt=0.0001)
-    print(get_Sigma_KLD_gili_system(model))
-    # model.sample_trajectory(10 ** 7)
+    print(model.steady_state)
+    # print(get_Sigma_KLD_gili_system(model))
+    # model.sample_trajectory(10 ** 6)
     # trj = model.trajectory
     # print(trj.Sigma_aff+trj.Sigma_WTD)
 
@@ -963,12 +972,32 @@ def main():
                         print(trj._get_n_IJK(k, j, i), ' - ', model.get_n_ijk(k,j,i,obs=True))
     # n_0 = np.array(4 * [n_est[2, 0]] + 4 * [n_est[0, 2]] + 4 * [n_est[2, 1]])/4.0
 
+def main2():
+    real_to_observed = {0: 0,
+                        1: 1,
+                        2: 2,
+                        3: 2
+                        }
+
+    w = np.array([[-11, 2, 0, 1],
+                  [3, -52.2, 2, 35],
+                  [0, 50, -77, 0.7],
+                  [8, 0.2, 75, -36.7]], dtype=float)
+    w *= np.random.rand(4, 4)
+    model = Model(real_to_observed, w)
+    n = model.n_matrix
+    p = model.steady_state
+    p_st = model.steady_state_stalling
+    print(p_st[0]/p_st[1])
+    print(p[0]/p[1]*(n[2,0]+n[3,0])/(n[0,2]+n[0,3])*(n[1,2]+n[1,3])/(n[2,1]+n[3,1]))
+    return model
 
 if __name__ == '__main__':
     # task1()
     # task2()
     # task3()
     # main()
+    # model = main2()
     # task4()
     task5()
     # check_KLD(0)
