@@ -798,7 +798,6 @@ class TrajectorySigma2:
 
     def __init__(self, real_to_observed, w, N, initial_state=0):
         self._real_to_observed = real_to_observed
-        self._w = w
         self._N = N
 
         self._trj = np.zeros(N, dtype=int)
@@ -809,6 +808,11 @@ class TrajectorySigma2:
         w_tmp = w.copy()
         np.fill_diagonal(w_tmp, 0)
         jump_probabilities = w_tmp/w_tmp.sum(axis=0, keepdims=True)
+
+        # Fix the diagonal of w
+        np.fill_diagonal(w_tmp, -np.sum(w_tmp, axis=0).squeeze())
+        self._w = w_tmp
+
         n_states = w.shape[0]
 
         print('start trajectory')
@@ -822,6 +826,9 @@ class TrajectorySigma2:
         print('end trajectory')
 
         self._t = np.concatenate([[0], np.cumsum(self._waiting_times)])
+
+    def _fix_w(self, w):
+        w_tmp = w.copy()
 
     def get_sigma2_stats(self):
         observed_states = list(set(self._real_to_observed.values()))
