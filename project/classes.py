@@ -789,6 +789,7 @@ class State:
 
 class TrajectorySigma2:
     _real_to_observed = None
+    _observed_to_real = None
     _N = None
     _w = None
     _steady_state = None
@@ -798,20 +799,22 @@ class TrajectorySigma2:
 
     def __init__(self, real_to_observed, w, N, initial_state=0):
         self._real_to_observed = real_to_observed
+        self._create_observed_to_real()
         self._N = N
 
         self._trj = np.zeros(N, dtype=int)
         self._trj[0] = initial_state
-        self._waiting_times = np.zeros(N)
-        self._waiting_times[0] = np.random.exponential(-1 / w[self._trj[0], self._trj[0]])
 
         w_tmp = w.copy()
         np.fill_diagonal(w_tmp, 0)
-        jump_probabilities = w_tmp/w_tmp.sum(axis=0, keepdims=True)
+        jump_probabilities = w_tmp / w_tmp.sum(axis=0, keepdims=True)
 
         # Fix the diagonal of w
         np.fill_diagonal(w_tmp, -np.sum(w_tmp, axis=0).squeeze())
         self._w = w_tmp
+
+        self._waiting_times = np.zeros(N)
+        self._waiting_times[0] = np.random.exponential(-1 / self._w[self._trj[0], self._trj[0]])
 
         n_states = w.shape[0]
 
@@ -821,14 +824,30 @@ class TrajectorySigma2:
             if np.log10(i+1) % 1 == 0:
                 print(i+1)
             self._trj[i+1] = np.random.choice(n_states, p=jump_probabilities[:, self._trj[i]])
-            self._waiting_times[i+1] = np.random.exponential(-1 / w[self._trj[i+1], self._trj[i+1]])
+            self._waiting_times[i+1] = np.random.exponential(-1 / self._w[self._trj[i+1], self._trj[i+1]])
 
         print('end trajectory')
 
         self._t = np.concatenate([[0], np.cumsum(self._waiting_times)])
 
-    def _fix_w(self, w):
-        w_tmp = w.copy()
+    def get_steady_state(self):
+        n_obs = len(self._observed_to_real.keys())
+        p = np.zeros((n_obs,))
+        T = self._t[-1]
+        for i in range(n_obs):
+            for j in self._observed_to_real[i]:
+                p[i] += np.sum(self._waiting_times[self._trj == j])/T
+        return p
+
+    def get_mean_waiting_times(self):
+        n_obs = len(self._observed_to_real.keys())
+        mwt = np.zeros((n_obs,))
+        for i in range(n_obs):
+            tmp_wt_list = []
+            for j in self._observed_to_real[i]:
+                tmp_wt_list.append(self._waiting_times[self._trj == j])
+            mwt[i] = np.mean(np.concatenate(tmp_wt_list))
+        return mwt
 
     def get_sigma2_stats(self):
         observed_states = list(set(self._real_to_observed.values()))
@@ -862,3 +881,8 @@ class TrajectorySigma2:
                         if K != I and K != J:
                             IJK_stats[I, J, K] = np.sum((observed_trj[:-2] == I) & (observed_trj[1:-1] == J) & (observed_trj[2:] == K)) / T
         return IJ_stats, IJK_stats
+
+    def _create_observed_to_real(self):
+        self._observed_to_real = {}
+        for key, value in self._real_to_observed.items():
+            self._observed_to_real.setdefault(value, []).append(key)
